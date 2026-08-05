@@ -12,8 +12,11 @@ what makes it safe to introduce before Supabase exists, and what lets the
 golden files prove the refactor was inert.
 """
 
+from contextlib import contextmanager
+
 import firebase_init
-from repositories.base import COLLECTIONS, CollectionRepo, Repository
+from repositories.base import (COLLECTIONS, CollectionRepo, Repository,
+                               Transaction, TransactionCollection)
 
 
 class DocumentCollectionRepo(CollectionRepo):
@@ -75,6 +78,85 @@ class DocumentCollectionRepo(CollectionRepo):
         return len(docs)
 
 
+class DocumentTransactionCollection(TransactionCollection):
+    """Queues writes onto the shared batch instead of committing them."""
+
+    def __init__(self, transaction, db, name):
+        self._tx = transaction
+        self._db = db
+        self._name = name
+
+    def _collection(self):
+        return self._db.collection(self._name)
+
+    def upsert(self, doc_id, data):
+        self._tx._queue().set(self._collection().document(doc_id), data)
+
+    def update(self, doc_id, fields):
+        self._tx._queue().update(self._collection().document(doc_id), fields)
+
+    def delete(self, doc_id):
+        self._tx._queue().delete(self._collection().document(doc_id))
+
+    def _matching(self, filters):
+        query = self._collection()
+        for field, value in filters.items():
+            query = query.where(field, "==", value)
+        return list(query.stream())
+
+    def update_where(self, filters, fields):
+        docs = self._matching(filters)
+        for doc in docs:
+            self._tx._queue().update(doc.reference, fields)
+        return len(docs)
+
+    def delete_where(self, filters):
+        docs = self._matching(filters)
+        for doc in docs:
+            self._tx._queue().delete(doc.reference)
+        return len(docs)
+
+
+class DocumentTransaction(Transaction):
+    """One Firestore batch, committed only if the block finishes cleanly."""
+
+    # Firestore's hard cap. Enforced here rather than left to fail at
+    # commit so the error names the real problem, and so the mock — which
+    # has no cap — refuses the same transactions the real backend would.
+    MAX_WRITES = 500
+
+    def __init__(self, db):
+        self._db = db
+        self._batch = db.batch()
+        self._writes = 0
+        self._collections = {}
+
+    def _queue(self):
+        """The batch, after counting one more write against the cap."""
+        self._writes += 1
+        if self._writes > self.MAX_WRITES:
+            raise ValueError(
+                f"transaction exceeds {self.MAX_WRITES} writes, which is "
+                f"Firestore's per-batch limit. Splitting it would give up "
+                f"the all-or-nothing guarantee this transaction exists "
+                f"for, so it is refused instead.")
+        return self._batch
+
+    def collection(self, name):
+        if name not in COLLECTIONS:
+            raise KeyError(f"unknown collection {name!r}")
+        if name not in self._collections:
+            self._collections[name] = DocumentTransactionCollection(
+                self, self._db, name)
+        return self._collections[name]
+
+    def _commit(self):
+        # Committing an empty batch is a wasted round trip; a rename that
+        # touched nothing should not talk to Firestore at all.
+        if self._writes:
+            self._batch.commit()
+
+
 class DocumentRepository(Repository):
     def __init__(self, db):
         if db is None:
@@ -88,6 +170,17 @@ class DocumentRepository(Repository):
         if name not in self._repos:
             self._repos[name] = DocumentCollectionRepo(self._db, name)
         return self._repos[name]
+
+    @contextmanager
+    def transaction(self):
+        """Yields a Transaction, committing it only on a clean exit.
+
+        An exception propagates with nothing written: the batch is never
+        committed, so Firestore never sees a partial fan-out.
+        """
+        tx = DocumentTransaction(self._db)
+        yield tx
+        tx._commit()
 
     def next_sequence(self, counter_name):
         """The Firestore transaction this replaces at the call sites.

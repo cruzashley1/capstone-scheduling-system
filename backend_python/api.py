@@ -278,9 +278,8 @@ def change_password(request: ChangePasswordRequest):
         # The record keeps only the mask — the new password lives in
         # Firebase Auth (or the hashed mock store) and nowhere else.
         # Clearing the flag sends the next login straight to the dashboard.
-        employee_ref = db.collection("employees").document(request.username)
-        if employee_ref.get().exists:
-            employee_ref.update({
+        if repo.employees.get(request.username) is not None:
+            repo.employees.update(request.username, {
                 "password": passwords.MASK,
                 "mustChangePassword": False,
             })
@@ -301,16 +300,16 @@ def confirm_stations(request: ConfirmStationsRequest):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        employee_ref = db.collection("employees").document(request.username)
-        if not employee_ref.get().exists:
+        if repo.employees.get(request.username) is None:
             raise HTTPException(status_code=404, detail="Employee not found.")
 
-        employee_ref.update({
+        repo.employees.update(request.username, {
             "preferredStations": request.preferredStations,
             "mustSelectStations": False,
         })
 
-        return {"success": True, "employee": employee_ref.get().to_dict()}
+        return {"success": True,
+                "employee": repo.employees.get(request.username)}
     except HTTPException:
         raise
     except Exception as e:
@@ -381,7 +380,7 @@ def create_employee(request: EmployeeCreateRequest):
             "mustSelectStations": True,
         }
 
-        db.collection("employees").document(username).set(employee_data)
+        repo.employees.upsert(username, employee_data)
 
         # The one and only time the generated password is readable. The
         # admin shares it with the guard, who must replace it on first
@@ -406,13 +405,11 @@ def update_employee(employee_id: str, request: EmployeeUpdateRequest):
         raise HTTPException(status_code=400, detail="No fields provided to update")
 
     try:
-        doc_ref = db.collection("employees").document(employee_id)
-        if not doc_ref.get().exists:
+        if repo.employees.get(employee_id) is None:
             raise HTTPException(status_code=404, detail="Employee not found")
 
-        doc_ref.update(updates)
-        updated_doc = doc_ref.get().to_dict()
-        return {"success": True, "employee": updated_doc}
+        repo.employees.update(employee_id, updates)
+        return {"success": True, "employee": repo.employees.get(employee_id)}
     except HTTPException:
         raise
     except Exception as e:
@@ -451,7 +448,7 @@ def reset_employee_password(employee_id: str):
             status_code=400,
             detail=f"Failed to reset the login for {employee_id}: {str(e)}")
 
-    db.collection("employees").document(employee_id).update({
+    repo.employees.update(employee_id, {
         "password": passwords.MASK,
         # Same first-login rule a new account gets: the guard replaces
         # the issued password before reaching their dashboard.
@@ -476,7 +473,7 @@ def delete_employee(employee_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        db.collection("employees").document(employee_id).delete()
+        repo.employees.delete(employee_id)
 
         # Also remove their login so they can't sign in anymore.
         # Safe to ignore if the auth user was already missing.
@@ -847,7 +844,7 @@ def create_station(request: StationCreateRequest):
             "isActive": True,
         }
 
-        db.collection("stations").document(station_id).set(station_data)
+        repo.stations.upsert(station_id, station_data)
 
         return {"success": True, "station": station_data}
 
@@ -877,12 +874,10 @@ def update_station(station_id: str, request: StationUpdateRequest):
         updates["postTimes"] = request.postTimes.cleaned()
 
     try:
-        doc_ref = db.collection("stations").document(station_id)
-        snapshot = doc_ref.get()
-        if not snapshot.exists:
+        current = repo.stations.get(station_id)
+        if current is None:
             raise HTTPException(status_code=404, detail="Station not found")
 
-        current = snapshot.to_dict() or {}
         previous_name = current.get("name", "")
 
         # Validate the station as it will look AFTER the merge, so a
@@ -919,32 +914,30 @@ def update_station(station_id: str, request: StationUpdateRequest):
                     shift, existing_times.get(shift, []) or []))
                  for shift in ("morning", "afternoon", "night")})
 
-        doc_ref.update(updates)
+        repo.stations.update(station_id, updates)
 
         # Keep the denormalized stationName on existing schedules in sync
         # so Schedule Management and Station Detail keep matching up.
         if "name" in updates:
-            batch = db.batch()
-            for doc in (db.collection("schedules")
-                        .where("stationId", "==", station_id).stream()):
-                batch.update(doc.reference, {"stationName": updates["name"]})
-
             # Employees and special assignments point at a station by NAME
             # (that's the key scheduler.py buckets its staff by), so a
             # rename that only touched schedules used to strand every
             # guard posted here: their assignedStation would name a
             # station that no longer exists and they'd drop out of the
-            # next generated schedule entirely.
-            for doc in (db.collection("employees")
-                        .where("assignedStation", "==", previous_name).stream()):
-                batch.update(doc.reference,
-                             {"assignedStation": updates["name"]})
-            for doc in (db.collection(SPECIAL_ASSIGNMENTS)
-                        .where("stationId", "==", station_id).stream()):
-                batch.update(doc.reference, {"stationName": updates["name"]})
-            batch.commit()
+            # next generated schedule entirely. All three move together
+            # or not at all.
+            with repo.transaction() as tx:
+                tx.schedules.update_where(
+                    {"stationId": station_id},
+                    {"stationName": updates["name"]})
+                tx.employees.update_where(
+                    {"assignedStation": previous_name},
+                    {"assignedStation": updates["name"]})
+                tx.special_assignments.update_where(
+                    {"stationId": station_id},
+                    {"stationName": updates["name"]})
 
-        return {"success": True, "station": doc_ref.get().to_dict()}
+        return {"success": True, "station": repo.stations.get(station_id)}
     except HTTPException:
         raise
     except Exception as e:
@@ -960,21 +953,15 @@ def delete_station(station_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc_ref = db.collection("stations").document(station_id)
-        if not doc_ref.get().exists:
+        if repo.stations.get(station_id) is None:
             raise HTTPException(status_code=404, detail="Station not found")
 
-        batch = db.batch()
-        for doc in (db.collection("schedules")
-                    .where("stationId", "==", station_id).stream()):
-            batch.delete(doc.reference)
-        # Pins outlive the schedules they influenced, so they have to go
-        # too — a leftover pin would keep naming a deleted station.
-        for doc in (db.collection(SPECIAL_ASSIGNMENTS)
-                    .where("stationId", "==", station_id).stream()):
-            batch.delete(doc.reference)
-        batch.delete(doc_ref)
-        batch.commit()
+        with repo.transaction() as tx:
+            tx.schedules.delete_where({"stationId": station_id})
+            # Pins outlive the schedules they influenced, so they have to
+            # go too — a leftover pin would keep naming a deleted station.
+            tx.special_assignments.delete_where({"stationId": station_id})
+            tx.stations.delete(station_id)
 
         return {"success": True}
     except HTTPException:
@@ -1197,31 +1184,32 @@ def save_station_special_assignments(station_id: str,
         resolved.append((emp, shift))
 
     try:
-        existing = {doc.id: doc for doc in
-                    db.collection(SPECIAL_ASSIGNMENTS)
-                    .where("rotationCycleId", "==", cycle_id).stream()}
+        existing = {rec["id"]: rec for rec in
+                    repo.special_assignments.find(rotationCycleId=cycle_id)}
 
-        batch = db.batch()
+        # Every write below is collected first and committed in one
+        # transaction at the end: the pins and the notifications about
+        # them have to land together, or a guard is told they were pinned
+        # to a post that never saved and goes and stands at it.
+        dropped = []
 
         # Drop the pins this station used to hold that aren't in the new
         # list. Scoped to this station so saving Monumento never touches
         # a pin belonging to Abad Santos.
         keep = {f"{cycle_id}_{emp['id']}" for emp, _ in resolved}
-        for doc_id, doc in existing.items():
-            data = doc.to_dict()
+        for doc_id, data in existing.items():
             if data.get("stationId") == station_id and doc_id not in keep:
-                batch.delete(doc.reference)
+                dropped.append(doc_id)
 
         moved = []
         saved = []
         notify = []  # (emp, shift) pairs whose pin is new or changed
         for emp, shift in resolved:
             doc_id = f"{cycle_id}_{emp['id']}"
-            prior = existing.get(doc_id)
-            if prior is None:
+            prior_data = existing.get(doc_id)
+            if prior_data is None:
                 notify.append((emp, shift))
             else:
-                prior_data = prior.to_dict()
                 if prior_data.get("stationId") not in (None, station_id):
                     # Same doc ID, different station: the overwrite below
                     # relocates them, which is what the admin asked for,
@@ -1247,8 +1235,6 @@ def save_station_special_assignments(station_id: str,
                 "homeStation": (emp.get("assignedStation") or "").strip() or None,
                 "createdAt": datetime.now(timezone.utc).isoformat(),
             }
-            batch.set(db.collection(SPECIAL_ASSIGNMENTS).document(doc_id),
-                      record)
             saved.append(record)
 
         # Tell each newly pinned (or re-shifted / relocated) guard about
@@ -1265,6 +1251,7 @@ def save_station_special_assignments(station_id: str,
             "hgDay": "HG Day shift (0500H - 1700H)",
             "hgNight": "HG Night shift (1700H - 0500H)",
         }
+        pin_notifications = []
         for emp, shift in notify:
             duty = shift_labels.get(
                 shift, "floating reliever duty (morning/afternoon posts)")
@@ -1286,10 +1273,16 @@ def save_station_special_assignments(station_id: str,
                 "createdAt": now_iso,
                 "isRead": False,
             }
-            batch.set(db.collection("employee_notifications")
-                      .document(notification["id"]), notification)
+            pin_notifications.append(notification)
 
-        batch.commit()
+        with repo.transaction() as tx:
+            for doc_id in dropped:
+                tx.special_assignments.delete(doc_id)
+            for record in saved:
+                tx.special_assignments.upsert(record["id"], record)
+            for notification in pin_notifications:
+                tx.employee_notifications.upsert(
+                    notification["id"], notification)
 
         return {"success": True, "specialAssignments": saved, "notes": moved}
     except HTTPException:

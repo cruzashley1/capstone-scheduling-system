@@ -162,19 +162,95 @@ class CollectionRepo(ABC):
         """
 
 
-class Repository(ABC):
-    """The set of collections the backend can reach.
+class _CollectionAccess(ABC):
+    """Reaches collections as attributes — `x.schedules`, `x.employees` —
+    resolving through `collection()`.
 
-    Collections are reached as attributes — `repo.schedules`,
-    `repo.employees` — which resolve through `collection()` below. That
-    is done with __getattr__ rather than fifteen near-identical property
-    declarations per implementation; the COLLECTIONS whitelist keeps a
-    typo loud instead of silently returning something empty.
+    __getattr__ rather than fifteen near-identical property declarations
+    per implementation; the COLLECTIONS whitelist keeps a typo loud
+    instead of silently returning something empty. Shared by Repository
+    and Transaction so both read the same at the call site.
     """
 
     @abstractmethod
     def collection(self, name):
-        """The CollectionRepo for `name`."""
+        """The per-collection accessor for `name`."""
+
+    def __getattr__(self, name):
+        if name in COLLECTIONS:
+            return self.collection(name)
+        raise AttributeError(
+            f"{type(self).__name__} has no attribute {name!r}. "
+            f"Known collections: {', '.join(COLLECTIONS)}")
+
+
+class TransactionCollection(ABC):
+    """The writes available inside a transaction, for one collection.
+
+    Same names and meanings as CollectionRepo's writes; the difference is
+    that nothing lands until the transaction commits. There are no reads
+    here — every current caller reads what it needs first and then
+    writes, and Firestore's batches are write-only anyway.
+    """
+
+    @abstractmethod
+    def upsert(self, doc_id, data):
+        """Queues a full-record write."""
+
+    @abstractmethod
+    def update(self, doc_id, fields):
+        """Queues a partial merge."""
+
+    @abstractmethod
+    def delete(self, doc_id):
+        """Queues a removal."""
+
+    @abstractmethod
+    def update_where(self, filters, fields):
+        """Queues a merge into every matching record. Returns the count.
+
+        The matching happens NOW — the query runs immediately and only
+        the writes wait for the commit. That is how Firestore works
+        (batches cannot read), and it matches what the call sites did by
+        hand: query first, then batch the updates.
+        """
+
+    @abstractmethod
+    def delete_where(self, filters):
+        """Queues a removal of every matching record. Returns the count."""
+
+
+class Transaction(_CollectionAccess):
+    """Writes across collections that land together or not at all.
+
+    The reason this exists: five call sites open a Firestore batch, write
+    to two or three collections, and commit once. Renaming a station
+    touches schedules, employees and pins; deleting one removes the
+    station, its schedules and its pins. Half of either is a broken
+    database — an employee whose assignedStation names a station that no
+    longer exists drops out of the next generated schedule entirely.
+
+    Used as a context manager, committing only on a clean exit:
+
+        with repo.transaction() as tx:
+            tx.schedules.update_where({"stationId": sid}, {...})
+            tx.employees.update_where({"assignedStation": old}, {...})
+
+    Raising inside the block writes nothing at all.
+
+    Firestore implements this as a batch, Postgres as BEGIN/COMMIT.
+    Firestore caps a batch at 500 writes, so implementations must refuse
+    an oversized transaction loudly rather than silently splitting it —
+    a split transaction is the exact thing this class exists to prevent.
+    """
+
+
+class Repository(_CollectionAccess):
+    """The set of collections the backend can reach."""
+
+    @abstractmethod
+    def transaction(self):
+        """A context manager yielding a Transaction."""
 
     @abstractmethod
     def next_sequence(self, counter_name):
@@ -195,10 +271,3 @@ class Repository(ABC):
         so the interface asks for the next number and lets each backend
         reach it however it can.
         """
-
-    def __getattr__(self, name):
-        if name in COLLECTIONS:
-            return self.collection(name)
-        raise AttributeError(
-            f"{type(self).__name__} has no attribute {name!r}. "
-            f"Known collections: {', '.join(COLLECTIONS)}")

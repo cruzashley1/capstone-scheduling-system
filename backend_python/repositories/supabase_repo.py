@@ -28,7 +28,8 @@ rows, and this layer reassembles the nested JSON the API returns, so
 neither api.py nor Flutter learns that the storage changed.
 """
 
-from repositories.base import COLLECTIONS, CollectionRepo, Repository
+from repositories.base import (COLLECTIONS, CollectionRepo, Repository,
+                               Transaction, TransactionCollection)
 
 
 def to_camel(name):
@@ -100,6 +101,48 @@ class SupabaseCollectionRepo(CollectionRepo):
         raise NotImplementedError("Supabase backend not implemented yet")
 
 
+class SupabaseTransactionCollection(TransactionCollection):
+    """Statements inside one BEGIN/COMMIT.
+
+    Postgres has the easier job here: update_where and delete_where are
+    single statements rather than a query followed by N queued writes, so
+    there is no per-batch cap to respect and no risk of a fan-out being
+    split. The 500-write refusal in the document backend has no
+    counterpart — do not add one.
+    """
+
+    def __init__(self, connection, table):
+        self._connection = connection
+        self._table = table
+
+    def upsert(self, doc_id, data):
+        raise NotImplementedError("Supabase backend not implemented yet")
+
+    def update(self, doc_id, fields):
+        raise NotImplementedError("Supabase backend not implemented yet")
+
+    def delete(self, doc_id):
+        raise NotImplementedError("Supabase backend not implemented yet")
+
+    def update_where(self, filters, fields):
+        # UPDATE <table> SET ... WHERE ... — one statement, rowcount back.
+        raise NotImplementedError("Supabase backend not implemented yet")
+
+    def delete_where(self, filters):
+        # DELETE FROM <table> WHERE ... — likewise.
+        raise NotImplementedError("Supabase backend not implemented yet")
+
+
+class SupabaseTransaction(Transaction):
+    def __init__(self, connection):
+        self._connection = connection
+
+    def collection(self, name):
+        if name not in COLLECTIONS:
+            raise KeyError(f"unknown collection {name!r}")
+        return SupabaseTransactionCollection(self._connection, name)
+
+
 class SupabaseRepository(Repository):
     def __init__(self, client=None):
         self._client = client
@@ -108,6 +151,12 @@ class SupabaseRepository(Repository):
         if name not in COLLECTIONS:
             raise KeyError(f"unknown collection {name!r}")
         return SupabaseCollectionRepo(self._client, name)
+
+    def transaction(self):
+        # BEGIN ... COMMIT, rolling back if the block raises. Must be a
+        # @contextmanager like the document backend's, so call sites read
+        # identically.
+        raise NotImplementedError("Supabase backend not implemented yet")
 
     def next_sequence(self, counter_name):
         # One statement, no transaction to manage:
