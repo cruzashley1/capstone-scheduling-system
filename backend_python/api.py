@@ -3755,7 +3755,7 @@ def submit_leave_request(request: LeaveRequestCreateRequest):
     )
 
     try:
-        db.collection(leave.COLLECTION).document(record["id"]).set(record)
+        repo.leave_requests.upsert(record["id"], record)
     except Exception as e:
         raise HTTPException(status_code=500,
                             detail=f"Failed to save leave request: {str(e)}")
@@ -3789,8 +3789,7 @@ def get_leave_requests():
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = db.collection(leave.COLLECTION).stream()
-        requests = sorted((doc.to_dict() for doc in docs),
+        requests = sorted(repo.leave_requests.list(),
                           key=lambda r: r.get("submittedAt", ""), reverse=True)
         for r in requests:
             r["phase"] = leave.phase_of(r)
@@ -3845,10 +3844,9 @@ def get_leave_impact(request_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        snap = db.collection(leave.COLLECTION).document(request_id).get()
-        if not snap.exists:
+        record = repo.leave_requests.get(request_id)
+        if record is None:
             raise HTTPException(status_code=404, detail="Leave request not found")
-        record = snap.to_dict()
         employee = _leave_employee(record.get("employeeId", ""), fallback={
             "id": record.get("employeeId", ""),
             "name": record.get("employeeName", ""),
@@ -3893,11 +3891,9 @@ def decide_leave_request(request_id: str, request: LeaveDecisionRequest):
                             detail="status must be 'approved' or 'denied'")
 
     try:
-        doc_ref = db.collection(leave.COLLECTION).document(request_id)
-        snap = doc_ref.get()
-        if not snap.exists:
+        record = repo.leave_requests.get(request_id)
+        if record is None:
             raise HTTPException(status_code=404, detail="Leave request not found")
-        record = snap.to_dict()
         if record.get("status") != "pending":
             raise HTTPException(
                 status_code=409,
@@ -3935,7 +3931,7 @@ def decide_leave_request(request_id: str, request: LeaveDecisionRequest):
             "isRead": True,
         }
         record.update(updates)
-        doc_ref.update(updates)
+        repo.leave_requests.update(request_id, updates)
 
         pretty = leave.pretty_range(record.get("startDate", ""),
                                     record.get("endDate", ""))
@@ -3966,10 +3962,9 @@ def mark_leave_request_read(request_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc_ref = db.collection(leave.COLLECTION).document(request_id)
-        if not doc_ref.get().exists:
+        if repo.leave_requests.get(request_id) is None:
             raise HTTPException(status_code=404, detail="Leave request not found")
-        doc_ref.update({"isRead": True})
+        repo.leave_requests.update(request_id, {"isRead": True})
         return {"success": True}
     except HTTPException:
         raise
@@ -3987,18 +3982,16 @@ def withdraw_leave_request(request_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc_ref = db.collection(leave.COLLECTION).document(request_id)
-        snap = doc_ref.get()
-        if not snap.exists:
+        record = repo.leave_requests.get(request_id)
+        if record is None:
             raise HTTPException(status_code=404, detail="Leave request not found")
-        record = snap.to_dict()
         if record.get("status") != "pending":
             raise HTTPException(
                 status_code=409,
                 detail=f"This leave has already been "
                        f"{record.get('status', 'decided')} and can no longer "
                        f"be withdrawn.")
-        doc_ref.delete()
+        repo.leave_requests.delete(request_id)
         return {"success": True}
     except HTTPException:
         raise
@@ -4017,11 +4010,9 @@ def cancel_leave(request_id: str, request: LeaveCancelRequest):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc_ref = db.collection(leave.COLLECTION).document(request_id)
-        snap = doc_ref.get()
-        if not snap.exists:
+        record = repo.leave_requests.get(request_id)
+        if record is None:
             raise HTTPException(status_code=404, detail="Leave request not found")
-        record = snap.to_dict()
         if record.get("status") not in ("approved", "pending"):
             raise HTTPException(
                 status_code=409,
@@ -4035,7 +4026,7 @@ def cancel_leave(request_id: str, request: LeaveCancelRequest):
             "cancelReason": reason,
         }
         record.update(updates)
-        doc_ref.update(updates)
+        repo.leave_requests.update(request_id, updates)
 
         message = (f"Your {record.get('leaveType')} for "
                    f"{leave.pretty_range(record.get('startDate', ''), record.get('endDate', ''))} "
@@ -4126,7 +4117,7 @@ def set_employee_on_leave(employee_id: str, request: AdminLeaveCreateRequest):
     )
 
     try:
-        db.collection(leave.COLLECTION).document(record["id"]).set(record)
+        repo.leave_requests.upsert(record["id"], record)
     except Exception as e:
         raise HTTPException(status_code=500,
                             detail=f"Failed to save leave: {str(e)}")
