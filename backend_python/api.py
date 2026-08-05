@@ -54,9 +54,37 @@ load_dotenv()
 # Global variable for the database
 db = None
 
+
+class _RepositoryProxy:
+    """Resolves the repository from whatever `db` currently holds.
+
+    `repo` cannot simply be assigned next to `db` in lifespan, because
+    lifespan is not the only way into this module: testing_*.py imports
+    api and calls the endpoint functions directly, setting `api.db`
+    itself (see testing_station_rename.py, testing_special_conflict.py).
+    A repository bound once at startup would still be None there, and
+    every migrated call site would fail with an AttributeError on None —
+    which is exactly what happened, and which the golden files could not
+    catch because they go through a running server.
+
+    Resolving on access keeps the two in step however api.py is entered,
+    and rebuilds only when `db` itself is swapped.
+    """
+
+    _bound = None  # (db_handle, repository)
+
+    def __getattr__(self, name):
+        if db is None:
+            raise RuntimeError(
+                "Database not initialized — set api.db before using api.repo")
+        if _RepositoryProxy._bound is None or _RepositoryProxy._bound[0] is not db:
+            _RepositoryProxy._bound = (db, db_backend.get_repository(db))
+        return getattr(_RepositoryProxy._bound[1], name)
+
+
 # The repository over that same database. Collections that have been
 # migrated are read through this; the rest still use `db` directly.
-repo = None
+repo = _RepositoryProxy()
 
 # 2. Fetch the secret key safely
 FIREBASE_WEB_API_KEY = os.getenv("FIREBASE_WEB_API_KEY")
@@ -66,11 +94,13 @@ if not FIREBASE_WEB_API_KEY:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global db, repo
+    global db
     print("Initializing Firebase...")
     try:
+        # `repo` needs no assignment here — it resolves from `db` on use,
+        # so it cannot go stale or stay unset on the paths that skip
+        # lifespan entirely.
         db = firebase_init.get_db()
-        repo = db_backend.get_repository(db)
         print(f"Firebase connected successfully! "
               f"(backend: {db_backend.active_backend()})")
     except Exception as e:
