@@ -74,6 +74,7 @@ import random
 from datetime import date, datetime, timezone
 
 import placement as placement_engine
+import repositories
 import schedule_notes
 
 # A station keeps at least this many familiar guards each cycle.
@@ -404,10 +405,9 @@ def plan_rotation(employees, current_station_of, previously_stayed, seed,
 
 def _load_cycle_placement(db, cycle_id, group):
     """Reads a stored placement back. Returns employeeId -> assignment dict."""
-    docs = (db.collection(ROTATION_ASSIGNMENTS)
-              .where("rotationCycleId", "==", cycle_id)
-              .where("group", "==", group).stream())
-    return {d.to_dict()["employeeId"]: d.to_dict() for d in docs}
+    records = repositories.from_db(db).station_rotation_assignments.find(
+        rotationCycleId=cycle_id, group=group)
+    return {rec["employeeId"]: rec for rec in records}
 
 
 def _delete_cycle_placement(db, cycle_id, group):

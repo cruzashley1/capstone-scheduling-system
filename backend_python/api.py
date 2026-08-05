@@ -163,9 +163,8 @@ def login(request: LoginRequest):
     # If Auth succeeds, fetch the user's role from Firestore
     try:
         # 1. First, check the 'users' collection (for Admin)
-        user_doc = db.collection("users").document(request.username).get()
-        if user_doc.exists:
-            user_data = user_doc.to_dict()
+        user_data = repo.users.get(request.username)
+        if user_data is not None:
             return {
                 "message": "Login successful",
                 "role": user_data.get("role", "regular"), # Admins use the 'role' key
@@ -458,10 +457,8 @@ def get_employee_schedule(employee_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = db.collection("schedules").where("status", "==", "published").stream()
         shifts, appearances = [], []
-        for doc in docs:
-            schedule = doc.to_dict()
+        for schedule in repo.schedules.find(status="published"):
             appears = False
             for day in schedule.get("days", []):
                 for entry in day.get("entries", []):
@@ -552,8 +549,7 @@ def get_station_overview(employee_id: str, date: Optional[str] = None):
     station = (emp.get("assignedStation") or "").strip()
 
     try:
-        published = [d.to_dict() for d in db.collection("schedules")
-                     .where("status", "==", "published").stream()]
+        published = repo.schedules.find(status="published")
     except Exception as e:
         raise HTTPException(status_code=500,
                             detail=f"Failed to fetch schedules: {str(e)}")
@@ -993,11 +989,9 @@ def get_special_assignments(cycleId: Optional[str] = None):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        query = db.collection(SPECIAL_ASSIGNMENTS)
-        if cycleId:
-            query = query.where("rotationCycleId", "==", cycleId)
+        filters = {"rotationCycleId": cycleId} if cycleId else {}
         return {"success": True,
-                "specialAssignments": [doc.to_dict() for doc in query.stream()]}
+                "specialAssignments": repo.special_assignments.find(**filters)}
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -1037,8 +1031,7 @@ def get_duty_status(cycleId: str):
 
     try:
         duty = {}
-        for doc in db.collection("schedules").stream():
-            schedule = doc.to_dict()
+        for schedule in repo.schedules.list():
             if (schedule.get("endDate", "") < start_iso
                     or schedule.get("startDate", "") > end_iso):
                 continue
@@ -1279,19 +1272,19 @@ def _stale_pin_rosters(start, end_iso, keep_doc_ids):
     """
     pins = {}
     for cycle_id in _cycle_ids_for_period(start):
-        for doc in (db.collection(SPECIAL_ASSIGNMENTS)
-                    .where("rotationCycleId", "==", cycle_id).stream()):
-            data = doc.to_dict()
+        for data in repo.special_assignments.find(rotationCycleId=cycle_id):
             pins[data["employeeId"]] = data
     if not pins:
         return []
 
     start_iso = start.isoformat()
     stale = []
-    for doc in db.collection("schedules").stream():
-        if doc.id in keep_doc_ids:
+    # `id` mirrors the document id on every schedule — they are written as
+    # `.document(schedule["id"]).set(schedule)` — so filtering on the field
+    # is the same test as filtering on doc.id was.
+    for schedule in repo.schedules.list():
+        if schedule.get("id") in keep_doc_ids:
             continue  # this run replaces it, so it can't go stale
-        schedule = doc.to_dict()
         if (schedule.get("endDate", "") < start_iso
                 or schedule.get("startDate", "") > end_iso):
             continue  # different dates entirely — not a clash
@@ -1479,8 +1472,7 @@ def get_schedules():
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = db.collection("schedules").stream()
-        schedules = sorted((doc.to_dict() for doc in docs),
+        schedules = sorted(repo.schedules.list(),
                            key=lambda s: s.get("createdAt", ""), reverse=True)
         return {"success": True, "schedules": schedules}
     except Exception as e:
@@ -1767,10 +1759,9 @@ def _existing_commitments(employee_id, start_iso, end_iso, exclude_id):
     (scheduler._load_period_commitments); a manual add has to honour the
     same invariant or the guard is rostered two places at once."""
     booked = {}
-    for doc in db.collection("schedules").stream():
-        if doc.id == exclude_id:
+    for data in repo.schedules.list():
+        if data.get("id") == exclude_id:
             continue
-        data = doc.to_dict()
         if (data.get("endDate", "") < start_iso
                 or data.get("startDate", "") > end_iso):
             continue
@@ -2486,7 +2477,7 @@ def submit_attendance_report(request: AttendanceReportCreateRequest):
                                request.shiftTitle)
 
     try:
-        if db.collection("attendance_reports").document(report_id).get().exists:
+        if repo.attendance_reports.get(report_id) is not None:
             raise HTTPException(
                 status_code=409,
                 detail=f"The {request.shiftTitle} report for {request.date} "
@@ -2527,8 +2518,7 @@ def get_attendance_reports():
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = db.collection("attendance_reports").stream()
-        reports = sorted((doc.to_dict() for doc in docs),
+        reports = sorted(repo.attendance_reports.list(),
                          key=lambda r: r.get("submittedAt", ""), reverse=True)
         return {"success": True, "reports": reports}
     except Exception as e:
@@ -2585,8 +2575,7 @@ def get_replacements():
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = db.collection("replacements").stream()
-        records = sorted((doc.to_dict() for doc in docs),
+        records = sorted(repo.replacements.list(),
                          key=lambda r: (r.get("date", ""),
                                         r.get("appliedAt", "")))
         return {"success": True, "replacements": records}
@@ -2651,11 +2640,9 @@ def get_employee_notifications(employee_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = (db.collection("employee_notifications")
-                .where("employeeId", "==", employee_id).stream())
-        notifications = sorted((doc.to_dict() for doc in docs),
-                               key=lambda n: n.get("createdAt", ""),
-                               reverse=True)
+        notifications = sorted(
+            repo.employee_notifications.find(employeeId=employee_id),
+            key=lambda n: n.get("createdAt", ""), reverse=True)
         return {"success": True, "notifications": notifications}
     except Exception as e:
         raise HTTPException(status_code=500,
@@ -2841,11 +2828,10 @@ def submit_absence_request(request: AbsenceRequestCreateRequest):
     # file again for a date they've already requested (even once it's been
     # approved or denied), so a decision can't be re-litigated by re-filing.
     try:
-        existing = (db.collection("absence_requests")
-                    .where("employeeId", "==", request.employeeId.strip())
-                    .stream())
-        prior = next((doc.to_dict() for doc in existing
-                      if doc.to_dict().get("date") == request.date), None)
+        existing = repo.absence_requests.find(
+            employeeId=request.employeeId.strip())
+        prior = next((rec for rec in existing
+                      if rec.get("date") == request.date), None)
         if prior is not None:
             status = prior.get("status", "pending")
             phrase = {
@@ -2902,8 +2888,7 @@ def get_absence_requests():
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = db.collection("absence_requests").stream()
-        requests = sorted((doc.to_dict() for doc in docs),
+        requests = sorted(repo.absence_requests.list(),
                           key=lambda r: r.get("submittedAt", ""), reverse=True)
         return {"success": True, "requests": requests}
     except Exception as e:
@@ -2919,9 +2904,7 @@ def get_employee_absence_requests(employee_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = (db.collection("absence_requests")
-                .where("employeeId", "==", employee_id).stream())
-        requests = sorted((doc.to_dict() for doc in docs),
+        requests = sorted(repo.absence_requests.find(employeeId=employee_id),
                           key=lambda r: r.get("submittedAt", ""), reverse=True)
         return {"success": True, "requests": requests}
     except Exception as e:
@@ -3045,9 +3028,8 @@ def _employee_duty_dates(employee_id):
     PUBLISHED schedule — the days they can't volunteer to cover because
     they're already working them."""
     dates = set()
-    for doc in (db.collection("schedules")
-                .where("status", "==", "published").stream()):
-        for day in doc.to_dict().get("days", []):
+    for schedule in repo.schedules.find(status="published"):
+        for day in schedule.get("days", []):
             if any(e.get("employeeId") == employee_id
                    for e in day.get("entries", [])):
                 dates.add(day.get("date"))
@@ -3135,9 +3117,7 @@ def get_employee_cover_offers(employee_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = (db.collection("cover_offers")
-                .where("employeeId", "==", employee_id).stream())
-        offers = sorted((doc.to_dict() for doc in docs),
+        offers = sorted(repo.cover_offers.find(employeeId=employee_id),
                         key=lambda o: o.get("date", ""), reverse=True)
         return {"success": True, "offers": offers}
     except Exception as e:
@@ -3161,9 +3141,7 @@ def get_cover_offers(date: Optional[str] = None, status: Optional[str] = None):
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
 
     try:
-        docs = (db.collection("cover_offers")
-                .where("date", "==", date_iso).stream())
-        offers = [doc.to_dict() for doc in docs]
+        offers = repo.cover_offers.find(date=date_iso)
         if status:
             offers = [o for o in offers
                       if o.get("status", "active") == status]
@@ -3227,8 +3205,7 @@ def _scheduled_dates_for_group(group):
     floating guard can't request a day some station already booked them
     for."""
     covered = set()
-    for doc in db.collection("schedules").stream():
-        s = doc.to_dict()
+    for s in repo.schedules.list():
         if group is not None and s.get("group") != group:
             continue
         start, end = s.get("startDate"), s.get("endDate")
@@ -3276,9 +3253,7 @@ def _employee_special_dates(employee_id, statuses=None):
     to `statuses` when given (e.g. only pending/approved block a re-file);
     all statuses otherwise."""
     taken = {}
-    for doc in (db.collection("special_requests")
-                .where("employeeId", "==", employee_id).stream()):
-        r = doc.to_dict()
+    for r in repo.special_requests.find(employeeId=employee_id):
         if statuses is not None and r.get("status") not in statuses:
             continue
         for d in r.get("dates", []):
@@ -3406,8 +3381,7 @@ def get_special_requests():
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = db.collection("special_requests").stream()
-        requests = sorted((doc.to_dict() for doc in docs),
+        requests = sorted(repo.special_requests.list(),
                           key=lambda r: r.get("submittedAt", ""), reverse=True)
         return {"success": True, "requests": requests}
     except Exception as e:
@@ -3423,9 +3397,7 @@ def get_employee_special_requests(employee_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = (db.collection("special_requests")
-                .where("employeeId", "==", employee_id).stream())
-        requests = sorted((doc.to_dict() for doc in docs),
+        requests = sorted(repo.special_requests.find(employeeId=employee_id),
                           key=lambda r: r.get("submittedAt", ""), reverse=True)
         return {"success": True, "requests": requests}
     except Exception as e:

@@ -378,10 +378,9 @@ def load_special_assignments(db, cycle_id, also_cycle_ids=()):
     than flipping mid-period.
     """
     pins = {}
+    repo = repositories.from_db(db)
     for cid in list(also_cycle_ids) + [cycle_id]:
-        for doc in (db.collection(SPECIAL_ASSIGNMENTS)
-                    .where("rotationCycleId", "==", cid).stream()):
-            data = doc.to_dict()
+        for data in repo.special_assignments.find(rotationCycleId=cid):
             pins[data["employeeId"]] = data
     return pins
 
@@ -399,8 +398,7 @@ def load_special_requests(db, start_date):
     start_iso = start_date.isoformat()
     end_iso = (start_date + timedelta(days=PERIOD_DAYS - 1)).isoformat()
     approved, pending = {}, {}
-    for doc in db.collection(SPECIAL_REQUESTS).stream():
-        req = doc.to_dict()
+    for req in repositories.from_db(db).special_requests.list():
         status = req.get("status")
         if status not in ("approved", "pending"):
             continue  # denied requests never touch the schedule
@@ -440,8 +438,7 @@ def load_leaves(db, start_date):
     start_iso = start_date.isoformat()
     end_iso = (start_date + timedelta(days=PERIOD_DAYS - 1)).isoformat()
     approved, pending = {}, {}
-    for doc in db.collection(LEAVE_REQUESTS).stream():
-        rec = doc.to_dict()
+    for rec in repositories.from_db(db).leave_requests.list():
         status = rec.get("status")
         if status not in ("approved", "pending"):
             continue
@@ -841,8 +838,7 @@ def _load_period_commitments(db, group, start_date):
     busy = set()
     night_locked = set()
     day_locked = set()
-    for doc in db.collection("schedules").stream():
-        data = doc.to_dict()
+    for data in repositories.from_db(db).schedules.list():
         if data.get("group") == group:
             continue
         if (data.get("endDate", "") < start_iso

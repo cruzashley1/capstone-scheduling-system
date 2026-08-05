@@ -55,10 +55,9 @@ def _absent_ids(db, date_iso):
     """Everyone reported absent on that date — an absent guard can't
     cover another absent guard's post."""
     ids = set()
-    docs = db.collection("attendance_reports").where(
-        "date", "==", date_iso).stream()
-    for doc in docs:
-        for rec in doc.to_dict().get("records", []):
+    for report in repositories.from_db(db).attendance_reports.find(
+            date=date_iso):
+        for rec in report.get("records", []):
             if not rec.get("isPresent", True):
                 ids.add(rec.get("employeeId"))
     return ids
@@ -134,9 +133,7 @@ def _active_offers(db, date_iso):
     guards who volunteered on their rest day to come in. A fulfilled or
     withdrawn offer is ignored."""
     offers = {}
-    for doc in (db.collection("cover_offers")
-                .where("date", "==", date_iso).stream()):
-        offer = doc.to_dict()
+    for offer in repositories.from_db(db).cover_offers.find(date=date_iso):
         if offer.get("status", "active") == "active":
             offers[offer.get("employeeId")] = offer
     return offers
@@ -167,7 +164,7 @@ def suggest(db, date_iso, station, shift, absent_id):
     volunteered to cover this date (active cover offers) are boosted and
     always sort above non-volunteers, so a willing colleague sits at the
     top of the admin's list."""
-    schedules = [d.to_dict() for d in db.collection("schedules").stream()]
+    schedules = repositories.from_db(db).schedules.list()
     covering = _covering(schedules, date_iso)
     busy = _busy_ids(covering, date_iso)
     absent_today = _absent_ids(db, date_iso)

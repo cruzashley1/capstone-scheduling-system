@@ -188,9 +188,8 @@ def employee_leaves(db, employee_id, statuses=None):
     """One employee's leave records, oldest first. `statuses` filters to
     e.g. OPEN_STATUSES when only the slot-holding ones matter."""
     out = []
-    for doc in (db.collection(COLLECTION)
-                .where("employeeId", "==", employee_id).stream()):
-        rec = doc.to_dict()
+    for rec in repositories.from_db(db).leave_requests.find(
+            employeeId=employee_id):
         if statuses is not None and rec.get("status") not in statuses:
             continue
         out.append(rec)
@@ -255,8 +254,7 @@ def scheduled_dates_for_group(db, group):
     back to every group's schedules, so a floating guard can't book leave
     over a day some station already rostered them for."""
     covered = set()
-    for doc in db.collection("schedules").stream():
-        s = doc.to_dict()
+    for s in repositories.from_db(db).schedules.list():
         if group is not None and s.get("group") != group:
             continue
         start, end = s.get("startDate"), s.get("endDate")
@@ -308,8 +306,7 @@ def affected_duties(db, employee_id, start, end):
     needs a replacement rather than a post that quietly goes unmanned."""
     start_iso, end_iso = start.isoformat(), end.isoformat()
     hits = []
-    for doc in db.collection("schedules").stream():
-        s = doc.to_dict()
+    for s in repositories.from_db(db).schedules.list():
         if (s.get("endDate", "") < start_iso
                 or s.get("startDate", "") > end_iso):
             continue
@@ -614,8 +611,7 @@ def active_leaves(db, on_date=None):
     without loading each employee's history."""
     iso = (on_date or date.today()).isoformat()
     out = {}
-    for doc in db.collection(COLLECTION).stream():
-        rec = doc.to_dict()
+    for rec in repositories.from_db(db).leave_requests.list():
         if rec.get("status") != "approved":
             continue
         if rec.get("startDate", "") <= iso <= rec.get("endDate", ""):

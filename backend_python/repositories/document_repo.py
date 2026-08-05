@@ -3,7 +3,7 @@ Repository over a Firestore-shaped client.
 
 One implementation covers BOTH current backends — real Firestore and the
 offline `mock_firestore.MockFirestoreClient` — because the mock was
-written to impersonate Firestore's API. Whichever `firebase_init.get_db()
+written to impersonate Firestore's API. Whichever `firebase_init.get_db()`
 returns, the calls below are the same.
 
 This class is intentionally a thin translation and nothing more. It holds
@@ -12,7 +12,7 @@ what makes it safe to introduce before Supabase exists, and what lets the
 golden files prove the refactor was inert.
 """
 
-from repositories.base import CollectionRepo, Repository
+from repositories.base import COLLECTIONS, CollectionRepo, Repository
 
 
 class DocumentCollectionRepo(CollectionRepo):
@@ -33,29 +33,33 @@ class DocumentCollectionRepo(CollectionRepo):
             return None
         return snapshot.to_dict()
 
+    def find(self, **filters):
+        query = self._db.collection(self._name)
+        for field, value in filters.items():
+            query = query.where(field, "==", value)
+        return [doc.to_dict() for doc in query.stream()]
+
 
 class DocumentRepository(Repository):
     def __init__(self, db):
         if db is None:
             raise ValueError("DocumentRepository needs a database handle")
         self._db = db
-        self._stations = DocumentCollectionRepo(db, "stations")
-        self._employees = DocumentCollectionRepo(db, "employees")
+        self._repos = {}
 
-    @property
-    def stations(self):
-        return self._stations
-
-    @property
-    def employees(self):
-        return self._employees
+    def collection(self, name):
+        if name not in COLLECTIONS:
+            raise KeyError(f"unknown collection {name!r}")
+        if name not in self._repos:
+            self._repos[name] = DocumentCollectionRepo(self._db, name)
+        return self._repos[name]
 
     @property
     def db(self):
         """The raw handle, for the call sites not yet migrated.
 
-        Everything still using `db.collection(...)` keeps working while
-        the migration proceeds collection by collection. This goes away
-        when the last one moves across.
+        Writes still go through `db.collection(...)`: they need batches,
+        transactions and `doc.reference`, which this interface does not
+        expose yet. This goes away when the write vocabulary lands.
         """
         return self._db
