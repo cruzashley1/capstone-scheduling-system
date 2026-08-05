@@ -15,6 +15,11 @@ import firebase_init
 auth = firebase_init.get_auth()
 transactional = firebase_init.transactional
 
+# Chooses the repository for the active backend. Firestore and the mock are
+# still reached through `db` below; `repo` is the seam Supabase will arrive
+# on, and collections move onto it one at a time (see repositories/base.py).
+import db_backend
+
 from models.employee import EmployeeCreateRequest, EmployeeUpdateRequest, _role_to_type
 from models.station import (HEAD_GUARD_POST, StationCreateRequest,
                             StationPosts, StationPostTimes,
@@ -48,6 +53,10 @@ load_dotenv()
 # Global variable for the database
 db = None
 
+# The repository over that same database. Collections that have been
+# migrated are read through this; the rest still use `db` directly.
+repo = None
+
 # 2. Fetch the secret key safely
 FIREBASE_WEB_API_KEY = os.getenv("FIREBASE_WEB_API_KEY")
 
@@ -56,11 +65,13 @@ if not FIREBASE_WEB_API_KEY:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global db
+    global db, repo
     print("Initializing Firebase...")
     try:
         db = firebase_init.get_db()
-        print("Firebase connected successfully!")
+        repo = db_backend.get_repository(db)
+        print(f"Firebase connected successfully! "
+              f"(backend: {db_backend.active_backend()})")
     except Exception as e:
         print(f"CRITICAL: Firebase failed to initialize: {e}")
     
@@ -911,8 +922,7 @@ def get_stations():
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = db.collection("stations").stream()
-        stations = [doc.to_dict() for doc in docs]
+        stations = repo.stations.list()
         return {"success": True, "stations": stations}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch stations: {str(e)}")
@@ -931,8 +941,7 @@ def get_station_pools():
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        stations = [doc.to_dict()
-                    for doc in db.collection("stations").stream()]
+        stations = repo.stations.list()
         employees = [doc.to_dict()
                      for doc in db.collection("employees").stream()
                      if doc.to_dict().get("isActive", True)]
@@ -1089,10 +1098,10 @@ def save_station_special_assignments(station_id: str,
         raise HTTPException(status_code=400,
                             detail="cycleId must look like '202607'")
 
-    station = db.collection("stations").document(station_id).get()
-    if not station.exists:
+    station = repo.stations.get(station_id)
+    if station is None:
         raise HTTPException(status_code=404, detail="Station not found")
-    station_name = (station.to_dict().get("name") or "").strip()
+    station_name = (station.get("name") or "").strip()
 
     seen = set()
     for entry in request.assignments:
@@ -1236,8 +1245,7 @@ def _resolve_station_group(station_id):
     station list, exactly the way scheduler.generate_group_schedules
     slices GROUP_RANGES — so a station can never be generated under a
     different group than the one a full group run would place it in."""
-    stations = station_pools.sort_stations(
-        [doc.to_dict() for doc in db.collection("stations").stream()])
+    stations = station_pools.sort_stations(repo.stations.list())
     for index, station in enumerate(stations):
         if station.get("id") != station_id:
             continue
@@ -1902,10 +1910,9 @@ def add_schedule_employee(schedule_id: str,
         # Give the hand-added guard the same duty window the station's
         # setup gives that post, so they sit on the stagger ladder with
         # everyone else instead of defaulting to the shift's base hours.
-        station_snap = db.collection("stations").document(station_id).get()
-        window = station_posts.window_for_post(
-            station_snap.to_dict() or {} if station_snap.exists else {},
-            shift, post) or {}
+        station = repo.stations.get(station_id)
+        window = station_posts.window_for_post(station or {},
+                                               shift, post) or {}
 
         added = 0
         for index, day in enumerate(schedule.get("days", [])):
@@ -3253,7 +3260,7 @@ def _employee_home_group(employee):
     same station->group rule the scheduler uses. None when it can't be
     resolved (floating personnel with no assigned/preferred station)."""
     try:
-        stations = [doc.to_dict() for doc in db.collection("stations").stream()]
+        stations = repo.stations.list()
         group_of = station_pools.station_groups(stations)
         return station_pools.home_group(employee, group_of)
     except Exception:

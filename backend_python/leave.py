@@ -37,6 +37,7 @@ authorised what.
 import calendar
 from datetime import date, datetime, timedelta
 
+import repositories
 import station_pools
 
 COLLECTION = "leave_requests"
@@ -275,7 +276,7 @@ def home_group(db, employee):
     station->group rule the scheduler uses. None when it can't be
     resolved (floating personnel with no assigned/preferred station)."""
     try:
-        stations = [doc.to_dict() for doc in db.collection("stations").stream()]
+        stations = repositories.from_db(db).stations.list()
         return station_pools.home_group(
             employee, station_pools.station_groups(stations))
     except Exception:

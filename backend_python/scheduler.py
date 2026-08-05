@@ -157,6 +157,7 @@ Flutter Schedule model (days[] -> entries[]), stored in `schedules/`:
 
 from datetime import date, datetime, timedelta, timezone
 
+import repositories
 import rotation
 import schedule_notes
 import station_pools
@@ -1660,7 +1661,7 @@ def generate_group_schedules(db, group, start_date, rotate=True):
     if not isinstance(start_date, date):
         raise ValueError("start_date must be a date")
 
-    stations = [doc.to_dict() for doc in db.collection("stations").stream()]
+    stations = repositories.from_db(db).stations.list()
     stations.sort(key=lambda s: s.get("id", ""))
     lo, hi = GROUP_RANGES[group]
     group_stations = stations[lo:hi]
