@@ -69,11 +69,12 @@ class SupabaseCollectionRepo(CollectionRepo):
     def find(self, **filters):
         raise NotImplementedError("Supabase backend not implemented yet")
 
-    def upsert(self, doc_id, data):
+    def upsert(self, doc_id, data, merge=False):
         # INSERT INTO <table> (...) VALUES (...)
         # ON CONFLICT (id) DO UPDATE SET ...
-        # Note this REPLACES the row rather than merging into it, which
-        # is what Firestore's .set() does and what callers rely on.
+        # merge=False REPLACES the row — columns absent from `data` go
+        # back to their defaults, which is what Firestore's .set() does.
+        # merge=True updates only the given columns.
         raise NotImplementedError("Supabase backend not implemented yet")
 
     def upsert_many(self, records):
@@ -115,7 +116,7 @@ class SupabaseTransactionCollection(TransactionCollection):
         self._connection = connection
         self._table = table
 
-    def upsert(self, doc_id, data):
+    def upsert(self, doc_id, data, merge=False):
         raise NotImplementedError("Supabase backend not implemented yet")
 
     def update(self, doc_id, fields):

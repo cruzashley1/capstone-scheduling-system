@@ -104,13 +104,18 @@ class CollectionRepo(ABC):
     # delete's fan-out across schedules and pins.
 
     @abstractmethod
-    def upsert(self, doc_id, data):
-        """Writes `data` as the whole record at `doc_id`.
+    def upsert(self, doc_id, data, merge=False):
+        """Writes `data` at `doc_id`, creating the record if absent.
 
-        Mirrors Firestore's .set(): creates when absent, and REPLACES
-        rather than merges when present. Postgres equivalent is
-        INSERT ... ON CONFLICT (id) DO UPDATE. Named upsert rather than
-        create/save because both halves of that behaviour are relied on.
+        Mirrors Firestore's .set(): by default it REPLACES the record, so
+        fields missing from `data` are dropped. `merge=True` keeps them
+        and writes only the given fields — which is what saving a
+        rotation cycle wants, since it rewrites three fields of a record
+        that may carry others.
+
+        Both halves are meaningful in Postgres too:
+        INSERT ... ON CONFLICT (id) DO UPDATE SET, over every column or
+        only the given ones.
         """
 
     @abstractmethod
@@ -194,8 +199,8 @@ class TransactionCollection(ABC):
     """
 
     @abstractmethod
-    def upsert(self, doc_id, data):
-        """Queues a full-record write."""
+    def upsert(self, doc_id, data, merge=False):
+        """Queues a record write. `merge` as on CollectionRepo.upsert."""
 
     @abstractmethod
     def update(self, doc_id, fields):

@@ -43,8 +43,8 @@ class DocumentCollectionRepo(CollectionRepo):
             query = query.where(field, "==", value)
         return [doc.to_dict() for doc in query.stream()]
 
-    def upsert(self, doc_id, data):
-        self._db.collection(self._name).document(doc_id).set(data)
+    def upsert(self, doc_id, data, merge=False):
+        self._db.collection(self._name).document(doc_id).set(data, merge=merge)
 
     # Firestore rejects a batch of more than 500 writes. 400 leaves room
     # and matches the chunk size the notification writes already used.
@@ -89,8 +89,9 @@ class DocumentTransactionCollection(TransactionCollection):
     def _collection(self):
         return self._db.collection(self._name)
 
-    def upsert(self, doc_id, data):
-        self._tx._queue().set(self._collection().document(doc_id), data)
+    def upsert(self, doc_id, data, merge=False):
+        self._tx._queue().set(self._collection().document(doc_id), data,
+                              merge=merge)
 
     def update(self, doc_id, fields):
         self._tx._queue().update(self._collection().document(doc_id), fields)

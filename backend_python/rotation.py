@@ -80,10 +80,6 @@ import schedule_notes
 # A station keeps at least this many familiar guards each cycle.
 MIN_STAYED_PER_STATION = placement_engine.ANCHOR_TARGET
 
-ROTATION_CYCLES = "rotation_cycles"
-ROTATION_ASSIGNMENTS = "station_rotation_assignments"
-
-
 def build_cycle_id(day):
     """Rotation cycles are monthly: 2026-07-16 -> '202607'."""
     return f"{day.year}{day.month:02d}"
@@ -413,12 +409,9 @@ def _load_cycle_placement(db, cycle_id, group):
 def _delete_cycle_placement(db, cycle_id, group):
     """Removes a cycle's stored placement so the next run recomputes it
     (used when the placement references stations that no longer exist)."""
-    batch = db.batch()
-    for doc in (db.collection(ROTATION_ASSIGNMENTS)
-                .where("rotationCycleId", "==", cycle_id)
-                .where("group", "==", group).stream()):
-        batch.delete(doc.reference)
-    batch.commit()
+    with repositories.from_db(db).transaction() as tx:
+        tx.station_rotation_assignments.delete_where(
+            {"rotationCycleId": cycle_id, "group": group})
 
 
 def _setup_changed(stored, rotatable, group_stations):
@@ -484,22 +477,23 @@ def _setup_changed(stored, rotatable, group_stations):
 
 def _save_cycle_placement(db, cycle_id, group, month_start, placement,
                           station_ids):
-    batch = db.batch()
-    batch.set(
-        db.collection(ROTATION_CYCLES).document(cycle_id),
-        {
-            "id": cycle_id,
-            "monthStart": month_start.isoformat(),
-            "createdAt": datetime.now(timezone.utc).isoformat(),
-        },
-        merge=True,
-    )
-    for emp_id, info in placement.items():
-        doc_id = f"{cycle_id}_{emp_id}"
-        station = info["station"]
-        batch.set(
-            db.collection(ROTATION_ASSIGNMENTS).document(doc_id),
+    # The cycle marker and its placements land together: a cycle recorded
+    # without its assignments would be treated as already placed on the
+    # next run and the whole group would come back unplaced.
+    with repositories.from_db(db).transaction() as tx:
+        tx.rotation_cycles.upsert(
+            cycle_id,
             {
+                "id": cycle_id,
+                "monthStart": month_start.isoformat(),
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+            },
+            merge=True,
+        )
+        for emp_id, info in placement.items():
+            doc_id = f"{cycle_id}_{emp_id}"
+            station = info["station"]
+            tx.station_rotation_assignments.upsert(doc_id, {
                 "id": doc_id,
                 "rotationCycleId": cycle_id,
                 "group": group,
@@ -516,9 +510,7 @@ def _save_cycle_placement(db, cycle_id, group, month_start, placement,
                 "deployed": bool(station),
                 # True when this station is one they listed as preferred.
                 "preferred": info.get("preferred", False),
-            },
-        )
-    batch.commit()
+            })
 
 
 def resolve_placement(db, group, group_stations, employees, start_date,
