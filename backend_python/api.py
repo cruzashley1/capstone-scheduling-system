@@ -1667,14 +1667,15 @@ def _notified_count(schedule):
 
 
 def _write_notifications(notifications):
-    """Batch-writes notification docs, chunked under Firestore's
-    500-writes-per-batch limit."""
-    for i in range(0, len(notifications), 400):
-        batch = db.batch()
-        for n in notifications[i:i + 400]:
-            batch.set(db.collection("employee_notifications")
-                      .document(n["id"]), n)
-        batch.commit()
+    """Writes notification docs in bulk.
+
+    Publishing a schedule can notify a few hundred guards at once. The
+    chunking this used to do by hand — Firestore refuses a batch over
+    500 writes — now lives in the repository, because it is a limit of
+    that backend and not of this endpoint.
+    """
+    repo.employee_notifications.upsert_many(
+        {n["id"]: n for n in notifications})
 
 
 @app.post("/schedules/{schedule_id}/publish")
@@ -2578,7 +2579,7 @@ def submit_attendance_report(request: AttendanceReportCreateRequest):
     }
 
     try:
-        db.collection("attendance_reports").document(report_id).set(report_data)
+        repo.attendance_reports.upsert(report_id, report_data)
         return {"success": True, "report": report_data}
     except Exception as e:
         raise HTTPException(status_code=500,
@@ -2609,10 +2610,9 @@ def mark_attendance_report_read(report_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc_ref = db.collection("attendance_reports").document(report_id)
-        if not doc_ref.get().exists:
+        if repo.attendance_reports.get(report_id) is None:
             raise HTTPException(status_code=404, detail="Report not found")
-        doc_ref.update({"isRead": True})
+        repo.attendance_reports.update(report_id, {"isRead": True})
         return {"success": True}
     except HTTPException:
         raise
@@ -2628,13 +2628,9 @@ def mark_all_attendance_reports_read():
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = list(db.collection("attendance_reports")
-                    .where("isRead", "==", False).stream())
-        batch = db.batch()
-        for doc in docs:
-            batch.update(doc.reference, {"isRead": True})
-        batch.commit()
-        return {"success": True, "updated": len(docs)}
+        updated = repo.attendance_reports.update_where(
+            {"isRead": False}, {"isRead": True})
+        return {"success": True, "updated": updated}
     except Exception as e:
         raise HTTPException(status_code=400,
                             detail=f"Failed to mark reports read: {str(e)}")
@@ -2732,11 +2728,9 @@ def mark_notification_read(notification_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc_ref = db.collection("employee_notifications").document(
-            notification_id)
-        if not doc_ref.get().exists:
+        if repo.employee_notifications.get(notification_id) is None:
             raise HTTPException(status_code=404, detail="Notification not found")
-        doc_ref.update({"isRead": True})
+        repo.employee_notifications.update(notification_id, {"isRead": True})
         return {"success": True}
     except HTTPException:
         raise
@@ -2752,14 +2746,9 @@ def mark_all_notifications_read(employee_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = list(db.collection("employee_notifications")
-                    .where("employeeId", "==", employee_id)
-                    .where("isRead", "==", False).stream())
-        batch = db.batch()
-        for doc in docs:
-            batch.update(doc.reference, {"isRead": True})
-        batch.commit()
-        return {"success": True, "updated": len(docs)}
+        updated = repo.employee_notifications.update_where(
+            {"employeeId": employee_id, "isRead": False}, {"isRead": True})
+        return {"success": True, "updated": updated}
     except Exception as e:
         raise HTTPException(status_code=400,
                             detail=f"Failed to mark notifications read: {str(e)}")
@@ -2949,7 +2938,7 @@ def submit_absence_request(request: AbsenceRequestCreateRequest):
     }
 
     try:
-        db.collection("absence_requests").document(request_id).set(request_data)
+        repo.absence_requests.upsert(request_id, request_data)
         return {"success": True, "request": request_data}
     except Exception as e:
         raise HTTPException(status_code=500,
@@ -3003,12 +2992,10 @@ def decide_absence_request(request_id: str,
                             detail="status must be 'approved' or 'denied'")
 
     try:
-        doc_ref = db.collection("absence_requests").document(request_id)
-        snap = doc_ref.get()
-        if not snap.exists:
+        absence = repo.absence_requests.get(request_id)
+        if absence is None:
             raise HTTPException(status_code=404,
                                 detail="Absence request not found")
-        absence = snap.to_dict()
         if absence.get("status") != "pending":
             raise HTTPException(
                 status_code=409,
@@ -3025,7 +3012,7 @@ def decide_absence_request(request_id: str,
             # deciding it counts as reading it — the admin just opened it.
             "isRead": True,
         })
-        doc_ref.update({
+        repo.absence_requests.update(request_id, {
             "status": absence["status"],
             "decidedAt": absence["decidedAt"],
             "decidedBy": absence["decidedBy"],
@@ -3067,11 +3054,10 @@ def mark_absence_request_read(request_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc_ref = db.collection("absence_requests").document(request_id)
-        if not doc_ref.get().exists:
+        if repo.absence_requests.get(request_id) is None:
             raise HTTPException(status_code=404,
                                 detail="Absence request not found")
-        doc_ref.update({"isRead": True})
+        repo.absence_requests.update(request_id, {"isRead": True})
         return {"success": True}
     except HTTPException:
         raise
@@ -3153,11 +3139,10 @@ def submit_cover_offer(request: CoverOfferCreateRequest):
     offer_id = f"COV-{request.date.replace('-', '')}-{employee_id}"
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    doc_ref = db.collection("cover_offers").document(offer_id)
-    existing = doc_ref.get()
+    existing = repo.cover_offers.get(offer_id)
     # A fulfilled offer (the guard was already assigned to cover) is locked —
     # re-opening it would let them re-volunteer for a post they now hold.
-    if existing.exists and existing.to_dict().get("status") == "fulfilled":
+    if existing is not None and existing.get("status") == "fulfilled":
         raise HTTPException(
             status_code=409,
             detail="You have already been assigned to cover that day.")
@@ -3171,14 +3156,14 @@ def submit_cover_offer(request: CoverOfferCreateRequest):
         "preferredShifts": shifts,
         "preferredStations": stations,
         "status": "active",
-        "createdAt": (existing.to_dict().get("createdAt")
-                      if existing.exists else now_iso),
+        "createdAt": (existing.get("createdAt")
+                      if existing is not None else now_iso),
         "updatedAt": now_iso,
         "fulfilledAt": None,
     }
 
     try:
-        doc_ref.set(offer)
+        repo.cover_offers.upsert(offer_id, offer)
         return {"success": True, "offer": offer}
     except Exception as e:
         raise HTTPException(status_code=500,
@@ -3236,16 +3221,15 @@ def withdraw_cover_offer(offer_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc_ref = db.collection("cover_offers").document(offer_id)
-        snap = doc_ref.get()
-        if not snap.exists:
+        offer = repo.cover_offers.get(offer_id)
+        if offer is None:
             raise HTTPException(status_code=404, detail="Cover offer not found")
-        if snap.to_dict().get("status") == "fulfilled":
+        if offer.get("status") == "fulfilled":
             raise HTTPException(
                 status_code=409,
                 detail="You have already been assigned to cover that day, so "
                        "the offer can no longer be withdrawn.")
-        doc_ref.delete()
+        repo.cover_offers.delete(offer_id)
         return {"success": True}
     except HTTPException:
         raise
@@ -3442,7 +3426,7 @@ def submit_special_request(request: SpecialRequestCreateRequest):
     }
 
     try:
-        db.collection("special_requests").document(request_id).set(request_data)
+        repo.special_requests.upsert(request_id, request_data)
         return {"success": True, "request": request_data}
     except Exception as e:
         raise HTTPException(status_code=500,
@@ -3523,12 +3507,10 @@ def decide_special_request(request_id: str,
                             detail="status must be 'approved' or 'denied'")
 
     try:
-        doc_ref = db.collection("special_requests").document(request_id)
-        snap = doc_ref.get()
-        if not snap.exists:
+        special = repo.special_requests.get(request_id)
+        if special is None:
             raise HTTPException(status_code=404,
                                 detail="Special request not found")
-        special = snap.to_dict()
         if special.get("status") != "pending":
             raise HTTPException(
                 status_code=409,
@@ -3544,7 +3526,7 @@ def decide_special_request(request_id: str,
             "adminNote": note,
             "isRead": True,
         })
-        doc_ref.update({
+        repo.special_requests.update(request_id, {
             "status": special["status"],
             "decidedAt": special["decidedAt"],
             "decidedBy": special["decidedBy"],
@@ -3583,11 +3565,10 @@ def mark_special_request_read(request_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc_ref = db.collection("special_requests").document(request_id)
-        if not doc_ref.get().exists:
+        if repo.special_requests.get(request_id) is None:
             raise HTTPException(status_code=404,
                                 detail="Special request not found")
-        doc_ref.update({"isRead": True})
+        repo.special_requests.update(request_id, {"isRead": True})
         return {"success": True}
     except HTTPException:
         raise

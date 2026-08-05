@@ -43,6 +43,37 @@ class DocumentCollectionRepo(CollectionRepo):
     def upsert(self, doc_id, data):
         self._db.collection(self._name).document(doc_id).set(data)
 
+    # Firestore rejects a batch of more than 500 writes. 400 leaves room
+    # and matches the chunk size the notification writes already used.
+    _BATCH_LIMIT = 400
+
+    def upsert_many(self, records):
+        collection = self._db.collection(self._name)
+        items = list(records.items())
+        for start in range(0, len(items), self._BATCH_LIMIT):
+            batch = self._db.batch()
+            for doc_id, data in items[start:start + self._BATCH_LIMIT]:
+                batch.set(collection.document(doc_id), data)
+            batch.commit()
+
+    def update(self, doc_id, fields):
+        self._db.collection(self._name).document(doc_id).update(fields)
+
+    def delete(self, doc_id):
+        self._db.collection(self._name).document(doc_id).delete()
+
+    def update_where(self, filters, fields):
+        query = self._db.collection(self._name)
+        for field, value in filters.items():
+            query = query.where(field, "==", value)
+        docs = list(query.stream())
+        for start in range(0, len(docs), self._BATCH_LIMIT):
+            batch = self._db.batch()
+            for doc in docs[start:start + self._BATCH_LIMIT]:
+                batch.update(doc.reference, fields)
+            batch.commit()
+        return len(docs)
+
 
 class DocumentRepository(Repository):
     def __init__(self, db):

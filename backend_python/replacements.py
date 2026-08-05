@@ -216,8 +216,9 @@ def apply_replacement(db, req):
     date_iso = req.date
     station = req.station.strip()
     shift = req.shift
+    repo = repositories.from_db(db)
 
-    rep = repositories.from_db(db).employees.get(req.replacementEmployeeId)
+    rep = repo.employees.get(req.replacementEmployeeId)
     if rep is None:
         raise LookupError("Replacement employee not found")
 
@@ -288,23 +289,19 @@ def apply_replacement(db, req):
         "replacementEmployeeName": rep.get("name", ""),
         "appliedAt": applied_at,
     }
-    db.collection("replacements").document(record["id"]).set(record)
+    repo.replacements.upsert(record["id"], record)
 
     # Stamp the attendance report record(s) so the admin screens show
     # "Replaced by ..." instead of offering the button again.
     if req.reportId:
-        report_refs = [
-            db.collection("attendance_reports").document(req.reportId)]
+        report_ids = [req.reportId]
     else:
-        report_refs = [d.reference for d in
-                       db.collection("attendance_reports")
-                       .where("date", "==", date_iso)
-                       .where("station", "==", station).stream()]
-    for ref in report_refs:
-        snap = ref.get()
-        if not snap.exists:
+        report_ids = [r["id"] for r in repo.attendance_reports.find(
+            date=date_iso, station=station)]
+    for report_id in report_ids:
+        data = repo.attendance_reports.get(report_id)
+        if data is None:
             continue
-        data = snap.to_dict()
         changed = False
         for rec in data.get("records", []):
             if (rec.get("employeeId") == req.absentEmployeeId
@@ -314,7 +311,8 @@ def apply_replacement(db, req):
                 rec["replacedAt"] = applied_at
                 changed = True
         if changed:
-            ref.update({"records": data["records"]})
+            repo.attendance_reports.update(
+                report_id, {"records": data["records"]})
 
     # Flowchart's last box: notify the employee the schedule changed.
     notification = {
@@ -330,16 +328,15 @@ def apply_replacement(db, req):
         "createdAt": applied_at,
         "isRead": False,
     }
-    db.collection("employee_notifications").document(
-        notification["id"]).set(notification)
+    repositories.from_db(db).employee_notifications.upsert(
+        notification["id"], notification)
 
     # If the chosen guard volunteered for this day, close their offer so it
     # stops re-suggesting them and their availability card shows "assigned".
-    offer_ref = db.collection("cover_offers").document(
-        f"COV-{date_iso.replace('-', '')}-{rep['id']}")
-    offer_snap = offer_ref.get()
-    if offer_snap.exists and offer_snap.to_dict().get("status") != "fulfilled":
-        offer_ref.update({
+    offer_id = f"COV-{date_iso.replace('-', '')}-{rep['id']}"
+    offer = repo.cover_offers.get(offer_id)
+    if offer is not None and offer.get("status") != "fulfilled":
+        repo.cover_offers.update(offer_id, {
             "status": "fulfilled",
             "fulfilledAt": applied_at,
             "fulfilledStation": station,
@@ -351,12 +348,11 @@ def apply_replacement(db, req):
     # to 'approved' and tell the absent guard it was granted + covered.
     absence_id = getattr(req, "absenceRequestId", None)
     if absence_id:
-        abs_ref = db.collection("absence_requests").document(absence_id)
-        abs_snap = abs_ref.get()
+        absence = repo.absence_requests.get(absence_id)
         # Only decide a still-pending request — never overturn a prior
         # decision, and stay idempotent if apply is retried.
-        if abs_snap.exists and abs_snap.to_dict().get("status") == "pending":
-            abs_ref.update({
+        if absence is not None and absence.get("status") == "pending":
+            repo.absence_requests.update(absence_id, {
                 "status": "approved",
                 "decidedAt": applied_at,
                 "decidedBy": "admin",
@@ -364,8 +360,8 @@ def apply_replacement(db, req):
                 "coveredByName": rep.get("name", ""),
                 "isRead": True,
             })
-            db.collection("employee_notifications").document(
-                f"NTF-{absence_id}-DECISION").set({
+            repo.employee_notifications.upsert(
+                f"NTF-{absence_id}-DECISION", {
                     "id": f"NTF-{absence_id}-DECISION",
                     "employeeId": req.absentEmployeeId,
                     "type": "schedule",

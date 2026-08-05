@@ -100,8 +100,8 @@ class CollectionRepo(ABC):
     # a single UPDATE ... WHERE.
     #
     # Added as call sites need them, not before; each one costs two
-    # implementations. Planned, in the order the remaining 55 sites want
-    # them: update(), delete(), update_where(), delete_where().
+    # implementations. Still planned: delete_where(), for the station
+    # delete's fan-out across schedules and pins.
 
     @abstractmethod
     def upsert(self, doc_id, data):
@@ -111,6 +111,54 @@ class CollectionRepo(ABC):
         rather than merges when present. Postgres equivalent is
         INSERT ... ON CONFLICT (id) DO UPDATE. Named upsert rather than
         create/save because both halves of that behaviour are relied on.
+        """
+
+    @abstractmethod
+    def upsert_many(self, records):
+        """Upserts many records at once, given {doc_id: data}.
+
+        The bulk notification writes go through here — publishing a
+        schedule can notify a few hundred guards. Firestore needs those
+        chunked under its 500-write batch cap; Postgres does one
+        multi-row INSERT ... ON CONFLICT. Callers should not have to know
+        which, or what the cap is, so the chunking lives in the
+        implementation.
+        """
+
+    @abstractmethod
+    def update(self, doc_id, fields):
+        """Merges `fields` into the record at `doc_id`.
+
+        Partial, unlike upsert: untouched fields survive. Mirrors
+        Firestore's .update(), which RAISES when the document is absent
+        rather than creating it — callers rely on that, so the Supabase
+        implementation must not silently turn a missing row into an
+        insert.
+        """
+
+    @abstractmethod
+    def delete(self, doc_id):
+        """Removes the record at `doc_id`.
+
+        Deleting something already absent is not an error, matching
+        Firestore's .delete() — the withdraw-offer path relies on being
+        safe to retry.
+        """
+
+    @abstractmethod
+    def update_where(self, filters, fields):
+        """Merges `fields` into every record matching `filters`.
+
+        Returns how many were updated, which the mark-all-read endpoints
+        report back to the app.
+
+        This is the method that keeps `doc.reference` off the interface.
+        Firestore implements it as query-then-batch, and the readable
+        version of the same thing in Postgres is a single statement:
+
+            UPDATE <table> SET ... WHERE ...
+
+        The station rename will use this too, once employees move.
         """
 
 

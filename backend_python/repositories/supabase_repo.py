@@ -75,6 +75,30 @@ class SupabaseCollectionRepo(CollectionRepo):
         # is what Firestore's .set() does and what callers rely on.
         raise NotImplementedError("Supabase backend not implemented yet")
 
+    def upsert_many(self, records):
+        # One multi-row INSERT ... ON CONFLICT. No 500-write cap to work
+        # around here, though a few hundred thousand rows would still
+        # want chunking for statement size.
+        raise NotImplementedError("Supabase backend not implemented yet")
+
+    def update(self, doc_id, fields):
+        # UPDATE <table> SET ... WHERE id = %s
+        # Must RAISE when no row matched, not silently insert: callers
+        # depend on Firestore's .update() failing on a missing document
+        # (check rowcount and raise).
+        raise NotImplementedError("Supabase backend not implemented yet")
+
+    def delete(self, doc_id):
+        # DELETE FROM <table> WHERE id = %s
+        # Deleting nothing is not an error here, unlike update().
+        raise NotImplementedError("Supabase backend not implemented yet")
+
+    def update_where(self, filters, fields):
+        # UPDATE <table> SET ... WHERE <filters>, returning rowcount.
+        # The whole point of this method: no query-then-batch, no
+        # references — one statement, and it is already atomic.
+        raise NotImplementedError("Supabase backend not implemented yet")
+
 
 class SupabaseRepository(Repository):
     def __init__(self, client=None):
