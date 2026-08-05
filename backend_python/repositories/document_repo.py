@@ -12,6 +12,7 @@ what makes it safe to introduce before Supabase exists, and what lets the
 golden files prove the refactor was inert.
 """
 
+import firebase_init
 from repositories.base import COLLECTIONS, CollectionRepo, Repository
 
 
@@ -39,6 +40,9 @@ class DocumentCollectionRepo(CollectionRepo):
             query = query.where(field, "==", value)
         return [doc.to_dict() for doc in query.stream()]
 
+    def upsert(self, doc_id, data):
+        self._db.collection(self._name).document(doc_id).set(data)
+
 
 class DocumentRepository(Repository):
     def __init__(self, db):
@@ -53,6 +57,27 @@ class DocumentRepository(Repository):
         if name not in self._repos:
             self._repos[name] = DocumentCollectionRepo(self._db, name)
         return self._repos[name]
+
+    def next_sequence(self, counter_name):
+        """The Firestore transaction this replaces at the call sites.
+
+        Unchanged in behaviour from the two copies that lived in api.py:
+        read the counter inside a transaction, add one, write it back.
+        Starting from 0 when the document is absent means the first value
+        handed out is 1, which is what the existing counters assume.
+        """
+        counter_ref = (self._db.collection("counters").document(counter_name))
+        transactional = firebase_init.transactional
+
+        @transactional
+        def _increment(transaction):
+            snapshot = counter_ref.get(transaction=transaction)
+            current = snapshot.get("value") if snapshot.exists else 0
+            next_value = current + 1
+            transaction.set(counter_ref, {"value": next_value})
+            return next_value
+
+        return _increment(self._db.transaction())
 
     @property
     def db(self):

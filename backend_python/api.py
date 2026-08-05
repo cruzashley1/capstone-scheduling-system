@@ -14,7 +14,6 @@ import passwords
 # Resolved through firebase_init so development mode can swap in the offline
 # stand-ins (see USE_MOCK_DB in firebase_init.py).
 auth = firebase_init.get_auth()
-transactional = firebase_init.transactional
 
 # Chooses the repository for the active backend. Firestore and the mock are
 # still reached through `db` below; `repo` is the seam Supabase will arrive
@@ -178,7 +177,7 @@ def initialize_admin():
         )
         
         # 2. Save their role in Firestore
-        db.collection("users").document(username).set({
+        repo.users.upsert(username, {
             "username": username,
             "role": "admin",
             "active": True
@@ -327,18 +326,7 @@ def _get_next_sequence_number() -> int:
     means the number keeps climbing even if employees are later deleted,
     so two people can never end up with the same username/password.
     """
-    counter_ref = db.collection("counters").document("employee_counter")
-
-    @transactional
-    def _increment(transaction):
-        snapshot = counter_ref.get(transaction=transaction)
-        current = snapshot.get("value") if snapshot.exists else 0
-        next_value = current + 1
-        transaction.set(counter_ref, {"value": next_value})
-        return next_value
-
-    transaction = db.transaction()
-    return _increment(transaction)
+    return repo.next_sequence("employee_counter")
 
 
 def _generate_credentials(full_name: str, seq_number: int):
@@ -753,18 +741,7 @@ def _get_next_station_sequence_number() -> int:
     stored separately at counters/station_counter so employee and
     station numbering never collide or skip each other's counts.
     """
-    counter_ref = db.collection("counters").document("station_counter")
-
-    @transactional
-    def _increment(transaction):
-        snapshot = counter_ref.get(transaction=transaction)
-        current = snapshot.get("value") if snapshot.exists else 0
-        next_value = current + 1
-        transaction.set(counter_ref, {"value": next_value})
-        return next_value
-
-    transaction = db.transaction()
-    return _increment(transaction)
+    return repo.next_sequence("station_counter")
 
 
 def _validate_station_shape(required, posts):

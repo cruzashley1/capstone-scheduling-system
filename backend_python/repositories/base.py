@@ -80,6 +80,39 @@ class CollectionRepo(ABC):
         DEV_MODE.md — mock_firestore.py copies this too.
         """
 
+    # --- writes -------------------------------------------------------
+    #
+    # The guiding rule for everything below: name the INTENT, not the
+    # mechanism. Firestore has batches and document references; Postgres
+    # has transactions and no references at all. An interface shaped like
+    # `batch()` and `doc.reference` would force Supabase to imitate
+    # Firestore's machinery and undo the point of this layer.
+    #
+    # Said at the right altitude, the awkward cases collapse. The station
+    # rename fans a query out into a batch of per-document updates today:
+    #
+    #     for doc in db.collection("employees")
+    #                  .where("assignedStation", "==", old).stream():
+    #         batch.update(doc.reference, {"assignedStation": new})
+    #
+    # As intent that is one call — `update_where({...}, {...})` — which
+    # Firestore implements as query-then-batch and Postgres implements as
+    # a single UPDATE ... WHERE.
+    #
+    # Added as call sites need them, not before; each one costs two
+    # implementations. Planned, in the order the remaining 55 sites want
+    # them: update(), delete(), update_where(), delete_where().
+
+    @abstractmethod
+    def upsert(self, doc_id, data):
+        """Writes `data` as the whole record at `doc_id`.
+
+        Mirrors Firestore's .set(): creates when absent, and REPLACES
+        rather than merges when present. Postgres equivalent is
+        INSERT ... ON CONFLICT (id) DO UPDATE. Named upsert rather than
+        create/save because both halves of that behaviour are relied on.
+        """
+
 
 class Repository(ABC):
     """The set of collections the backend can reach.
@@ -94,6 +127,26 @@ class Repository(ABC):
     @abstractmethod
     def collection(self, name):
         """The CollectionRepo for `name`."""
+
+    @abstractmethod
+    def next_sequence(self, counter_name):
+        """Atomically increments a counter and returns its new value.
+
+        The clearest example of naming intent over mechanism. Today this
+        is a Firestore transaction that reads the counter, adds one and
+        writes it back — three steps that must not interleave with
+        another caller, or two employees get the same username.
+
+        Exposing "transaction" would push that dance onto every backend.
+        Postgres does the whole thing in one statement:
+
+            INSERT INTO counters (id, value) VALUES (%s, 1)
+            ON CONFLICT (id) DO UPDATE SET value = counters.value + 1
+            RETURNING value
+
+        so the interface asks for the next number and lets each backend
+        reach it however it can.
+        """
 
     def __getattr__(self, name):
         if name in COLLECTIONS:

@@ -68,6 +68,13 @@ class SupabaseCollectionRepo(CollectionRepo):
     def find(self, **filters):
         raise NotImplementedError("Supabase backend not implemented yet")
 
+    def upsert(self, doc_id, data):
+        # INSERT INTO <table> (...) VALUES (...)
+        # ON CONFLICT (id) DO UPDATE SET ...
+        # Note this REPLACES the row rather than merging into it, which
+        # is what Firestore's .set() does and what callers rely on.
+        raise NotImplementedError("Supabase backend not implemented yet")
+
 
 class SupabaseRepository(Repository):
     def __init__(self, client=None):
@@ -77,3 +84,14 @@ class SupabaseRepository(Repository):
         if name not in COLLECTIONS:
             raise KeyError(f"unknown collection {name!r}")
         return SupabaseCollectionRepo(self._client, name)
+
+    def next_sequence(self, counter_name):
+        # One statement, no transaction to manage:
+        #
+        #   INSERT INTO counters (id, value) VALUES (%s, 1)
+        #   ON CONFLICT (id) DO UPDATE SET value = counters.value + 1
+        #   RETURNING value
+        #
+        # Atomic because it is a single statement, so two concurrent
+        # callers cannot be handed the same number.
+        raise NotImplementedError("Supabase backend not implemented yet")
