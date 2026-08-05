@@ -81,8 +81,9 @@ class _RepositoryProxy:
         return getattr(_RepositoryProxy._bound[1], name)
 
 
-# The repository over that same database. Collections that have been
-# migrated are read through this; the rest still use `db` directly.
+# The repository over that same database. Every read and write in this
+# module goes through it; `db` survives only as the handle it resolves
+# from, and as what testing_*.py assigns to enter without lifespan.
 repo = _RepositoryProxy()
 
 # 2. Fetch the secret key safely

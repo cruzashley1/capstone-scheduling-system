@@ -213,13 +213,3 @@ class DocumentRepository(Repository):
             return next_value
 
         return _increment(self._db.transaction())
-
-    @property
-    def db(self):
-        """The raw handle, for the call sites not yet migrated.
-
-        Writes still go through `db.collection(...)`: they need batches,
-        transactions and `doc.reference`, which this interface does not
-        expose yet. This goes away when the write vocabulary lands.
-        """
-        return self._db

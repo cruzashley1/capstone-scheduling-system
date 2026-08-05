@@ -1,10 +1,11 @@
 """
 The data-access interface the rest of the backend talks to.
 
-Today `api.py`, `scheduler.py` and the rest reach the database through
+`api.py`, `scheduler.py` and the rest used to reach the database through
 `db.collection("stations").stream()` — Firestore's own vocabulary. That
-works for two backends because `mock_firestore.py` deliberately
-impersonates Firestore, so both sides speak the same dialect.
+worked for two backends because `mock_firestore.py` deliberately
+impersonates Firestore, so both sides spoke the same dialect. No runtime
+module speaks it any more; they all come through here.
 
 Supabase does not. There is no `.collection()` and no `.stream()`; it is
 PostgREST over SQL. So the switch can no longer live inside
@@ -100,8 +101,9 @@ class CollectionRepo(ABC):
     # a single UPDATE ... WHERE.
     #
     # Added as call sites need them, not before; each one costs two
-    # implementations. Still planned: delete_where(), for the station
-    # delete's fan-out across schedules and pins.
+    # implementations. delete_where() lives on TransactionCollection
+    # rather than here, because its only caller — the station delete's
+    # fan-out across schedules and pins — needs it inside a transaction.
 
     @abstractmethod
     def upsert(self, doc_id, data, merge=False):
