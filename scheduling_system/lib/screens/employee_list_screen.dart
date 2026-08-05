@@ -178,7 +178,8 @@ class _EmployeeListContentState extends State<EmployeeListContent> {
             _credentialRow('Password', employee.password),
             const SizedBox(height: 16),
             Text(
-              "You can view this again anytime on ${employee.name}'s detail page.",
+              "This password will not be shown again. If it is lost, reset "
+              "it from ${employee.name}'s detail page to issue a new one.",
               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           ],

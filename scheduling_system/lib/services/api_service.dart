@@ -313,6 +313,40 @@ class ApiService {
     }
   }
 
+  // Issues a NEW password for an employee and returns it once.
+  //
+  // Stored passwords are bcrypt hashes and cannot be read back, so a guard
+  // who forgets theirs is given a fresh one rather than told the old one.
+  // The password in the response is the only time it is readable — it is
+  // not stored anywhere that can be displayed again. The employee is forced
+  // to replace it on their next login.
+  static Future<Map<String, dynamic>> resetEmployeePassword(String id) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse("$baseUrl/employees/$id/reset-password"),
+            headers: {"Content-Type": "application/json"},
+          )
+          .timeout(const Duration(seconds: 10));
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {"success": true, "password": data["password"] ?? ""};
+      } else {
+        return {
+          "success": false,
+          "error": data["detail"] ?? "Failed to reset the password.",
+        };
+      }
+    } catch (e) {
+      return {
+        "success": false,
+        "error": e.toString(),
+      };
+    }
+  }
+
   // Saves the employee's confirmed preferred stations during onboarding and
   // clears the server-side mustSelectStations flag, so the onboarding picker
   // is shown only once. Returns the updated employee on success.

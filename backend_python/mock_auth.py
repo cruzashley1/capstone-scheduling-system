@@ -2,11 +2,15 @@
 Offline stand-in for firebase_admin.auth plus the Identity Toolkit
 password check, so development mode needs no network at all.
 
-Accounts live in mock_data/_auth.json as {uid: {email, password}}.
+Accounts live in mock_data/_auth.json as {uid: {email, password}}, where
+`password` holds a bcrypt hash — the same treatment real Firebase Auth
+gives the credential it checks, so development mode is not a weaker
+store than production.
 
-Passwords are stored in plain text. That is acceptable only because this file
-never holds real credentials: it is seeded from the generated development
-passwords and is git-ignored. Never point this at production data.
+Records written before hashing landed still verify, and are upgraded to a
+hash the first time their owner logs in successfully, so nothing needs
+migrating before the app works. `migrate_passwords.py` converts them all
+in one pass.
 """
 
 import json
@@ -14,6 +18,7 @@ import os
 import threading
 
 import atomic_write
+import passwords
 from mock_firestore import DEFAULT_DATA_DIR
 
 _AUTH_FILE = os.path.join(DEFAULT_DATA_DIR, "_auth.json")
@@ -63,7 +68,8 @@ def create_user(email=None, password=None, uid=None, **_kwargs):
         if uid in users:
             raise UidAlreadyExistsError(
                 f"The user with the provided uid already exists: {uid}")
-        users[uid] = {"email": email, "password": password}
+        users[uid] = {"email": email,
+                      "password": passwords.hash_password(password)}
         _flush()
     return MockUserRecord(uid, email)
 
@@ -74,7 +80,7 @@ def update_user(uid, password=None, email=None, **_kwargs):
         if uid not in users:
             raise UserNotFoundError(f"No user record found for uid: {uid}")
         if password is not None:
-            users[uid]["password"] = password
+            users[uid]["password"] = passwords.hash_password(password)
         if email is not None:
             users[uid]["email"] = email
         _flush()
@@ -100,17 +106,40 @@ def get_user(uid, **_kwargs):
 
 def verify_password(uid, password):
     """Local equivalent of the Identity Toolkit signInWithPassword call.
-    Returns True when the credentials match."""
+    Returns True when the credentials match.
+
+    A record still holding a plain-text password verifies once and is
+    then rewritten as a hash, so an existing mock_data/ upgrades itself
+    as people sign in rather than needing a migration first.
+    """
     with _lock:
         users = _load()
         record = users.get(uid)
-        return record is not None and record.get("password") == password
+        if record is None:
+            return False
+
+        stored = record.get("password")
+        if not passwords.verify(password, stored):
+            return False
+
+        if not passwords.is_hashed(stored):
+            record["password"] = passwords.hash_password(password)
+            _flush()
+        return True
 
 
 def upsert_user(uid, email, password):
     """Used by the exporter to seed accounts without tripping the
-    already-exists guard in create_user()."""
+    already-exists guard in create_user().
+
+    `password` may already be a hash (re-seeding from an exported
+    snapshot), in which case it is stored as-is rather than hashed twice.
+    """
     with _lock:
         users = _load()
-        users[uid] = {"email": email, "password": password}
+        users[uid] = {
+            "email": email,
+            "password": (password if passwords.is_hashed(password)
+                         else passwords.hash_password(password)),
+        }
         _flush()

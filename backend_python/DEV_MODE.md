@@ -39,13 +39,20 @@ startup. Flutter needs no changes — same host, same port, same endpoints.
 
 - **Writes persist.** Employees you create, passwords you change and schedules
   you generate are saved to `mock_data/` and survive restarts.
-- **Login works offline.** `mock_data/_auth.json` is seeded from the passwords
-  already stored on your employee records, so you can sign in as any of them.
-- **Admin signs in with `adminpassword123` offline**, regardless of the real
-  admin password. Admin passwords are hashed inside Firebase Auth and never
-  stored in Firestore, so there is nothing to export — mock mode falls back to
-  the default `/init-admin` password. Change it by editing `_auth.json`. The
-  real account is unaffected.
+- **Login works offline.** `mock_data/_auth.json` holds one bcrypt hash per
+  account. Records written before hashing landed still verify and are
+  upgraded in place on the next successful login; `migrate_passwords.py`
+  converts them all in one pass.
+- **Admin signs in with the `/init-admin` bootstrap password offline**,
+  regardless of the real admin password. That password comes from
+  `ADMIN_BOOTSTRAP_PASSWORD` in `.env`, falling back to the documented
+  development default when unset. Admin passwords are hashed inside Firebase
+  Auth and never stored in Firestore, so there is nothing to export. The real
+  account is unaffected.
+- **Passwords cannot be read back.** `_auth.json` stores hashes and the
+  `password` field on an employee record is a mask, so a forgotten password
+  is replaced rather than looked up — Employee Detail → Password → **Reset**,
+  which issues a new one and shows it once.
 - **To start clean**, delete `mock_data/` and re-run `export_firestore.py`
   (costs reads again), or restore the folder from a copy you kept.
 - **To go back to real Firestore**, set `USE_MOCK_DB=0` and restart.
@@ -83,6 +90,10 @@ the mock at the same time or it will raise `AttributeError` in dev mode.
 
 ## Security note
 
-`mock_data/` holds real employee records and plain-text passwords, and `.env`
-and `firebase-service-account.json` hold live credentials. All three are
-git-ignored — keep them that way.
+`mock_data/` holds real employee records (names, emails, phone numbers), and
+`.env` and `firebase-service-account.json` hold live credentials. All three
+are git-ignored — keep them that way. So is `golden/`, which holds the same
+employee records in recorded API responses.
+
+Passwords are no longer among the readable contents: `_auth.json` stores
+bcrypt hashes and employee records store a mask. See `passwords.py`.

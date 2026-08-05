@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 import firebase_init
+import passwords
 # Resolved through firebase_init so development mode can swap in the offline
 # stand-ins (see USE_MOCK_DB in firebase_init.py).
 auth = firebase_init.get_auth()
@@ -126,7 +127,16 @@ def initialize_admin():
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     username = "admin01"
-    password = "adminpassword123" # The default password you will use
+    # Read from the environment so the bootstrap credential is not a
+    # constant sitting in a source file (and in git history). .env is
+    # git-ignored; the fallback keeps existing development setups and
+    # DEV_MODE.md working, and is announced loudly when it is used.
+    password = os.getenv("ADMIN_BOOTSTRAP_PASSWORD", "").strip()
+    if not password:
+        password = "adminpassword123"
+        print("⚠️  ADMIN_BOOTSTRAP_PASSWORD is not set — creating the admin "
+              "with the documented development default. Set it in .env "
+              "before deploying.")
     masked_email = f"{username}@schedulingsystem.local"
     
     try:
@@ -236,13 +246,13 @@ def change_password(request: ChangePasswordRequest):
         # Update the real login credential in Firebase Auth
         auth.update_user(request.username, password=new_password)
 
-        # Keep the Firestore record in sync so the admin screens (which show
-        # the stored password) don't display a stale one, and clear the flag
-        # so the next login goes straight to the dashboard.
+        # The record keeps only the mask — the new password lives in
+        # Firebase Auth (or the hashed mock store) and nowhere else.
+        # Clearing the flag sends the next login straight to the dashboard.
         employee_ref = db.collection("employees").document(request.username)
         if employee_ref.get().exists:
             employee_ref.update({
-                "password": new_password,
+                "password": passwords.MASK,
                 "mustChangePassword": False,
             })
 
@@ -338,7 +348,11 @@ def create_employee(request: EmployeeCreateRequest):
             "preferredStations": request.preferredStations,
             "type": _role_to_type(request.role),
             "username": username,
-            "password": password,
+            # The record never keeps the password itself — only Firebase
+            # Auth (or the hashed mock store) holds a verifiable copy.
+            # The generated password is returned once, below, which is
+            # what the "share these login details" dialog displays.
+            "password": passwords.MASK,
             "dateJoined": datetime.now(timezone.utc).isoformat(),
             "isActive": True,
             # Forces the first-login password change before the employee
@@ -351,7 +365,12 @@ def create_employee(request: EmployeeCreateRequest):
 
         db.collection("employees").document(username).set(employee_data)
 
-        return {"success": True, "employee": employee_data}
+        # The one and only time the generated password is readable. The
+        # admin shares it with the guard, who must replace it on first
+        # login (mustChangePassword). It is not persisted anywhere in
+        # readable form, so it cannot be looked up again — only reset.
+        return {"success": True,
+                "employee": {**employee_data, "password": password}}
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to create employee: {str(e)}")
@@ -380,6 +399,56 @@ def update_employee(employee_id: str, request: EmployeeUpdateRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to update employee: {str(e)}")
+
+
+@app.post("/employees/{employee_id}/reset-password")
+def reset_employee_password(employee_id: str):
+    """Issues a NEW password for an employee and returns it once.
+
+    This replaces looking a password up. Hashes cannot be reversed, so
+    when a guard forgets theirs the admin does not read the old one —
+    they mint a new one, read it out, and the guard is forced to replace
+    it on their next login just like a freshly created account.
+
+    The returned password is not stored anywhere in readable form. If the
+    admin closes the dialog without noting it down, the fix is to reset
+    again, not to look it up.
+    """
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    employee = repo.employees.get(employee_id)
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    new_password = passwords.generate_password()
+
+    try:
+        # The credential store first: if this fails the employee keeps
+        # their old password, rather than being locked out by a record
+        # that says the password changed when it did not.
+        auth.update_user(employee_id, password=new_password)
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to reset the login for {employee_id}: {str(e)}")
+
+    db.collection("employees").document(employee_id).update({
+        "password": passwords.MASK,
+        # Same first-login rule a new account gets: the guard replaces
+        # the issued password before reaching their dashboard.
+        "mustChangePassword": True,
+    })
+
+    return {
+        "success": True,
+        "employeeId": employee_id,
+        "name": employee.get("name", ""),
+        "username": employee.get("username", employee_id),
+        "password": new_password,
+        "message": "Share this password with the employee. "
+                   "It will not be shown again.",
+    }
 
 
 @app.delete("/employees/{employee_id}")

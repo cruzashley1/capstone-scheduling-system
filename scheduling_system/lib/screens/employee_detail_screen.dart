@@ -37,7 +37,9 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
   late EmployeeType _selectedType;
   bool _isEditing = false;
   bool _isActive = true;
-  bool _showPassword = false; // NEW: eye toggle for the password row
+  // Replaced the password reveal toggle: with bcrypt hashes there is no
+  // readable password to reveal, only a new one to issue.
+  bool _resettingPassword = false;
 
   // This employee's leave history. "On Leave" is DERIVED from an approved
   // record whose range covers today — never stored as a flag, so a leave
@@ -1114,6 +1116,10 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
 
   // Same layout as _buildInfoRow, but the value is masked by default
   // with an eye icon to reveal/hide it.
+  // Passwords are stored as bcrypt hashes, so there is nothing here to
+  // reveal — the eye toggle this replaced could only ever have shown a
+  // readable copy, and that copy is what hashing removes. When a guard
+  // forgets their password the admin issues a new one instead.
   Widget _buildPasswordRow(String password) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -1130,26 +1136,132 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
             flex: 2,
             child: Row(
               children: [
-                Text(
-                  _showPassword ? password : '•' * password.length,
-                  style: const TextStyle(
+                const Text(
+                  '••••••••',
+                  style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                     fontFamily: 'monospace',
                     color: Color(0xFF1E293B),
                   ),
                 ),
-                const SizedBox(width: 8),
-                InkWell(
-                  onTap: () => setState(() => _showPassword = !_showPassword),
-                  child: Icon(
-                    _showPassword ? Icons.visibility_off : Icons.visibility,
-                    size: 18,
-                    color: Colors.grey[600],
+                const SizedBox(width: 12),
+                if (_resettingPassword)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  TextButton.icon(
+                    onPressed: _resetPassword,
+                    icon: const Icon(Icons.lock_reset_rounded, size: 18),
+                    label: const Text('Reset'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF1034A6),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                   ),
-                ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _resetPassword() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset password?'),
+        content: Text(
+          '${widget.employee.name} will be signed out of their current '
+          'password immediately and must set a new one at their next login.\n\n'
+          'The new password is shown only once, so have it ready to pass on.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1034A6),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Reset password'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _resettingPassword = true);
+    final result = await ApiService.resetEmployeePassword(widget.employee.id);
+    if (!mounted) return;
+    setState(() => _resettingPassword = false);
+
+    if (result['success'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['error']?.toString() ??
+              'Failed to reset the password.'),
+          backgroundColor: Colors.red[700],
+        ),
+      );
+      return;
+    }
+
+    final newPassword = result['password']?.toString() ?? '';
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('New password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Share this with ${widget.employee.name}:'),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(
+                newPassword,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'This will not be shown again. If it is lost, reset the '
+              'password once more.',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1034A6),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Done'),
           ),
         ],
       ),
