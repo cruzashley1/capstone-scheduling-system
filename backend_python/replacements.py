@@ -222,30 +222,27 @@ def apply_replacement(db, req):
     if rep is None:
         raise LookupError("Replacement employee not found")
 
-    snapshots = list(db.collection("schedules").stream())
-    covering = [(s, s.to_dict()) for s in snapshots
-                if s.to_dict().get("startDate", "") <= date_iso
-                <= s.to_dict().get("endDate", "")]
+    covering = [s for s in repo.schedules.list()
+                if s.get("startDate", "") <= date_iso <= s.get("endDate", "")]
 
     # Re-check the no-conflict rule right before writing, in case the
     # suggestion list went stale while the admin was deciding.
-    if req.replacementEmployeeId in _busy_ids(
-            [s for _, s in covering], date_iso):
+    if req.replacementEmployeeId in _busy_ids(covering, date_iso):
         raise ValueError(
             f"{rep.get('name', req.replacementEmployeeId)} is already "
             f"scheduled on {date_iso} — pick someone without a conflict.")
 
     # The station's schedule covering that date (published wins).
     target = None
-    for snap, sched in covering:
+    for sched in covering:
         if (sched.get("stationName") or "").strip() == station:
             if target is None or sched.get("status") == "published":
-                target = (snap, sched)
+                target = sched
     if target is None:
         raise LookupError(
             f"No schedule for {station} covers {date_iso}")
 
-    snap, sched = target
+    sched = target
     replaced_entry = False
     for day in sched.get("days", []):
         if day.get("date") != date_iso:
@@ -268,7 +265,7 @@ def apply_replacement(db, req):
         raise LookupError(
             f"{req.absentEmployeeId} has no entry on {date_iso} in the "
             f"{station} schedule")
-    snap.reference.update({"days": sched["days"]})
+    repo.schedules.update(sched["id"], {"days": sched["days"]})
 
     applied_at = datetime.now(timezone.utc).isoformat()
     absent_name = req.absentEmployeeName or req.absentEmployeeId

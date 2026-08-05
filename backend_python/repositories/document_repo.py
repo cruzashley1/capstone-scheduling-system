@@ -65,6 +65,16 @@ class DocumentCollectionRepo(CollectionRepo):
     def delete(self, doc_id):
         self._db.collection(self._name).document(doc_id).delete()
 
+    def delete_many(self, doc_ids):
+        collection = self._db.collection(self._name)
+        doc_ids = list(doc_ids)
+        for start in range(0, len(doc_ids), self._BATCH_LIMIT):
+            batch = self._db.batch()
+            for doc_id in doc_ids[start:start + self._BATCH_LIMIT]:
+                batch.delete(collection.document(doc_id))
+            batch.commit()
+        return len(doc_ids)
+
     def update_where(self, filters, fields):
         query = self._db.collection(self._name)
         for field, value in filters.items():

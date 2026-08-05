@@ -151,6 +151,18 @@ class CollectionRepo(ABC):
         """
 
     @abstractmethod
+    def delete_many(self, doc_ids):
+        """Removes every listed record. Returns how many were asked for.
+
+        Explicitly NOT a transaction, and not `delete_where({})` either.
+        The bulk schedule delete this exists for already accepted being
+        non-atomic — it chunked by hand and said so — because clearing
+        every schedule can exceed any batch limit and there is nothing to
+        keep consistent with. Taking ids rather than a filter keeps
+        "delete everything" from being one forgotten argument away.
+        """
+
+    @abstractmethod
     def update_where(self, filters, fields):
         """Merges `fields` into every record matching `filters`.
 

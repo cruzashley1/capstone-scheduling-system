@@ -1406,22 +1406,21 @@ def generate_schedules(request: ScheduleGenerateRequest):
     start_iso = start.isoformat()
     end_iso = (start + timedelta(days=scheduler.PERIOD_DAYS - 1)).isoformat()
     try:
-        query = db.collection("schedules")
-        query = (query.where("stationId", "==", request.stationId)
-                 if single_station else query.where("group", "==", group))
-        existing = list(query.stream())
+        existing = repo.schedules.find(
+            **({"stationId": request.stationId} if single_station
+               else {"group": group}))
     except Exception as e:
         raise HTTPException(status_code=500,
                             detail=f"Failed to check existing schedules: {str(e)}")
 
     conflicts = [
         doc for doc in existing
-        if not (doc.to_dict().get("endDate", "") < start_iso
-                or doc.to_dict().get("startDate", "") > end_iso)
+        if not (doc.get("endDate", "") < start_iso
+                or doc.get("startDate", "") > end_iso)
     ]
     if conflicts and not request.overwrite:
         periods = sorted({
-            f"{d.to_dict().get('startDate')} to {d.to_dict().get('endDate')}"
+            f"{d.get('startDate')} to {d.get('endDate')}"
             for d in conflicts
         })
         subject = (f"{single_station.get('name', request.stationId)}"
@@ -1437,7 +1436,8 @@ def generate_schedules(request: ScheduleGenerateRequest):
     # once, so stop here and name what has to be regenerated rather than
     # writing a schedule that is already known to contradict another.
     try:
-        stale = _stale_pin_rosters(start, end_iso, {d.id for d in conflicts})
+        stale = _stale_pin_rosters(start, end_iso,
+                                   {d.get("id") for d in conflicts})
     except HTTPException:
         raise
     except Exception as e:
@@ -1510,13 +1510,14 @@ def generate_schedules(request: ScheduleGenerateRequest):
                        f"'{single_station.get('name', request.stationId)}'.")
 
     try:
-        batch = db.batch()
-        for doc in conflicts:
-            batch.delete(doc.reference)
-        for schedule in schedules:
-            batch.set(db.collection("schedules").document(schedule["id"]),
-                      schedule)
-        batch.commit()
+        # The overwrite and the replacement land together: deleting the
+        # old period without writing the new one would leave the group
+        # with no schedule at all.
+        with repo.transaction() as tx:
+            for doc in conflicts:
+                tx.schedules.delete(doc["id"])
+            for schedule in schedules:
+                tx.schedules.upsert(schedule["id"], schedule)
     except Exception as e:
         raise HTTPException(status_code=500,
                             detail=f"Failed to save schedules: {str(e)}")
@@ -1679,11 +1680,9 @@ def publish_schedule(schedule_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc_ref = db.collection("schedules").document(schedule_id)
-        snap = doc_ref.get()
-        if not snap.exists:
+        schedule = repo.schedules.get(schedule_id)
+        if schedule is None:
             raise HTTPException(status_code=404, detail="Schedule not found")
-        schedule = snap.to_dict()
         if _is_empty_schedule(schedule):
             raise HTTPException(
                 status_code=400,
@@ -1701,7 +1700,7 @@ def publish_schedule(schedule_id: str):
                 detail=f"{len(undefined)} guard(s) still have an Undefined "
                        f"post ({sample}{'…' if len(undefined) > 3 else ''}). "
                        "Assign every post before publishing.")
-        doc_ref.update({"status": "published"})
+        repo.schedules.update(schedule_id, {"status": "published"})
         # Only the unpublished -> published transition announces; hitting
         # publish twice shouldn't re-alert everyone.
         if schedule.get("status") != "published":
@@ -1721,10 +1720,9 @@ def unpublish_schedule(schedule_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc_ref = db.collection("schedules").document(schedule_id)
-        if not doc_ref.get().exists:
+        if repo.schedules.get(schedule_id) is None:
             raise HTTPException(status_code=404, detail="Schedule not found")
-        doc_ref.update({"status": "unpublished"})
+        repo.schedules.update(schedule_id, {"status": "unpublished"})
         return {"success": True}
     except HTTPException:
         raise
@@ -1764,11 +1762,9 @@ def update_schedule_post(schedule_id: str, request: SchedulePostUpdateRequest):
         raise HTTPException(status_code=400, detail="post must not be empty")
 
     try:
-        doc_ref = db.collection("schedules").document(schedule_id)
-        snap = doc_ref.get()
-        if not snap.exists:
+        schedule = repo.schedules.get(schedule_id)
+        if schedule is None:
             raise HTTPException(status_code=404, detail="Schedule not found")
-        schedule = snap.to_dict()
         _reject_if_published(schedule, "change the post")
 
         own_entries = [
@@ -1791,7 +1787,7 @@ def update_schedule_post(schedule_id: str, request: SchedulePostUpdateRequest):
                 if is_own or entry.get("coveringFor") == request.employeeId:
                     entry["post"] = post
 
-        doc_ref.update({"days": schedule["days"]})
+        repo.schedules.update(schedule_id, {"days": schedule["days"]})
         return {"success": True, "post": post}
     except HTTPException:
         raise
@@ -1875,11 +1871,9 @@ def add_schedule_employee(schedule_id: str,
         raise HTTPException(status_code=400, detail="post must not be empty")
 
     try:
-        doc_ref = db.collection("schedules").document(schedule_id)
-        snap = doc_ref.get()
-        if not snap.exists:
+        schedule = repo.schedules.get(schedule_id)
+        if schedule is None:
             raise HTTPException(status_code=404, detail="Schedule not found")
-        schedule = snap.to_dict()
 
         _reject_if_published(schedule, "add the guard")
 
@@ -1990,7 +1984,7 @@ def add_schedule_employee(schedule_id: str,
             })
             added += 1
 
-        doc_ref.update({"days": schedule["days"]})
+        repo.schedules.update(schedule_id, {"days": schedule["days"]})
         return {
             "success": True,
             "employeeName": employee.get("name", ""),
@@ -2089,11 +2083,9 @@ def update_schedule_assignment(schedule_id: str,
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc_ref = db.collection("schedules").document(schedule_id)
-        snap = doc_ref.get()
-        if not snap.exists:
+        schedule = repo.schedules.get(schedule_id)
+        if schedule is None:
             raise HTTPException(status_code=404, detail="Schedule not found")
-        schedule = snap.to_dict()
         _reject_if_published(schedule, "edit the assignment")
 
         days = schedule.get("days", [])
@@ -2325,7 +2317,7 @@ def update_schedule_assignment(schedule_id: str,
                 })
             day["entries"] = kept
 
-        doc_ref.update({"days": days})
+        repo.schedules.update(schedule_id, {"days": days})
         return {
             "success": True,
             "employeeId": target_id,
@@ -2354,12 +2346,10 @@ def delete_schedule(schedule_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc_ref = db.collection("schedules").document(schedule_id)
-        snap = doc_ref.get()
-        if not snap.exists:
+        schedule = repo.schedules.get(schedule_id)
+        if schedule is None:
             raise HTTPException(status_code=404, detail="Schedule not found")
-        schedule = snap.to_dict()
-        doc_ref.delete()
+        repo.schedules.delete(schedule_id)
         if schedule.get("status") == "published":
             _write_notifications(_schedule_withdrawn_notifications(schedule))
         return {"success": True, "notified": _notified_count(schedule)}
@@ -2386,27 +2376,23 @@ def delete_schedules(status: str = "all"):
             detail="status must be one of: unpublished, published, all")
 
     try:
-        col = db.collection("schedules")
-        docs = list(col.stream() if scope == "all"
-                    else col.where("status", "==", scope).stream())
+        schedules = (repo.schedules.list() if scope == "all"
+                     else repo.schedules.find(status=scope))
 
         # Collect the alerts before deleting — once the docs are gone
         # there is no way to tell who was on them.
         notifications = []
-        for doc in docs:
-            data = doc.to_dict()
+        for data in schedules:
             if data.get("status") == "published":
                 notifications.extend(_schedule_withdrawn_notifications(data))
 
-        # Firestore caps a batch at 500 writes, so commit in chunks.
-        for start in range(0, len(docs), 400):
-            batch = db.batch()
-            for doc in docs[start:start + 400]:
-                batch.delete(doc.reference)
-            batch.commit()
+        # Not a transaction: clearing every schedule can outgrow any
+        # batch limit, and there is nothing here to stay consistent with.
+        # The chunking this used to do by hand now lives in the repository.
+        deleted = repo.schedules.delete_many(s["id"] for s in schedules)
 
         _write_notifications(notifications)
-        return {"success": True, "deleted": len(docs),
+        return {"success": True, "deleted": deleted,
                 "notified": len(notifications)}
     except Exception as e:
         raise HTTPException(status_code=400,
@@ -3578,32 +3564,27 @@ def publish_all_schedules():
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = list(db.collection("schedules")
-                    .where("status", "==", "unpublished").stream())
         # Schedules with Undefined posts stay unpublished — the admin
         # has to name every post first. Empty schedules (no guards on any
         # day) stay unpublished too: publishing one would just disconnect
         # Station Management from Schedule Management. The rest go out.
         ready, skipped, skipped_empty = [], [], []
-        for doc in docs:
-            data = doc.to_dict()
+        for data in repo.schedules.find(status="unpublished"):
             name = (data.get("stationName") or data.get("id", "?")).strip()
             if _is_empty_schedule(data):
                 skipped_empty.append(name)
             elif _undefined_post_guards(data):
                 skipped.append(name)
             else:
-                ready.append(doc)
+                ready.append(data)
 
-        batch = db.batch()
-        for doc in ready:
-            batch.update(doc.reference, {"status": "published"})
-        batch.commit()
+        with repo.transaction() as tx:
+            for data in ready:
+                tx.schedules.update(data["id"], {"status": "published"})
 
         notifications = []
-        for doc in ready:
-            notifications.extend(
-                _schedule_publish_notifications(doc.to_dict()))
+        for data in ready:
+            notifications.extend(_schedule_publish_notifications(data))
         _write_notifications(notifications)
         return {"success": True, "published": len(ready),
                 "skippedUndefined": sorted(skipped),

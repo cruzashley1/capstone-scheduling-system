@@ -95,6 +95,10 @@ class SupabaseCollectionRepo(CollectionRepo):
         # Deleting nothing is not an error here, unlike update().
         raise NotImplementedError("Supabase backend not implemented yet")
 
+    def delete_many(self, doc_ids):
+        # DELETE FROM <table> WHERE id = ANY(%s)
+        raise NotImplementedError("Supabase backend not implemented yet")
+
     def update_where(self, filters, fields):
         # UPDATE <table> SET ... WHERE <filters>, returning rowcount.
         # The whole point of this method: no query-then-batch, no
