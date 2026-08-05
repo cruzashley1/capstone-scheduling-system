@@ -352,8 +352,7 @@ def coverage_impact(db, employee, start, end):
 
     peers = 0
     if station and shift:
-        for doc in db.collection("employees").stream():
-            other = doc.to_dict()
+        for other in repositories.from_db(db).employees.list():
             if other.get("id") == emp_id or not other.get("isActive", True):
                 continue
             if ((other.get("assignedStation") or "").strip() == station

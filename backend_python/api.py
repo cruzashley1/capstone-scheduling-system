@@ -173,9 +173,8 @@ def login(request: LoginRequest):
             }
 
         # 2. Next, check the 'employees' collection (for Guards/Staff)
-        employee_doc = db.collection("employees").document(request.username).get()
-        if employee_doc.exists:
-            emp_data = employee_doc.to_dict()
+        emp_data = repo.employees.get(request.username)
+        if emp_data is not None:
             return {
                 "message": "Login successful",
                 "role": emp_data.get("type", "regular"), # Employees use the 'type' key
@@ -412,8 +411,7 @@ def get_employees():
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        docs = db.collection("employees").stream()
-        employees = [doc.to_dict() for doc in docs]
+        employees = repo.employees.list()
         return {"success": True, "employees": employees}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch employees: {str(e)}")
@@ -427,10 +425,10 @@ def get_employee(employee_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        doc = db.collection("employees").document(employee_id).get()
-        if not doc.exists:
+        employee = repo.employees.get(employee_id)
+        if employee is None:
             raise HTTPException(status_code=404, detail="Employee not found")
-        return {"success": True, "employee": doc.to_dict()}
+        return {"success": True, "employee": employee}
     except HTTPException:
         raise
     except Exception as e:
@@ -539,10 +537,9 @@ def get_station_overview(employee_id: str, date: Optional[str] = None):
     if db is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
-    emp_doc = db.collection("employees").document(employee_id).get()
-    if not emp_doc.exists:
+    emp = repo.employees.get(employee_id)
+    if emp is None:
         raise HTTPException(status_code=404, detail="Employee not found")
-    emp = emp_doc.to_dict()
 
     if date is None:
         date_iso = datetime.now().date().isoformat()
@@ -942,9 +939,8 @@ def get_station_pools():
 
     try:
         stations = repo.stations.list()
-        employees = [doc.to_dict()
-                     for doc in db.collection("employees").stream()
-                     if doc.to_dict().get("isActive", True)]
+        employees = [emp for emp in repo.employees.list()
+                     if emp.get("isActive", True)]
         pools = station_pools.build_station_pools(stations, employees)
         station_id_of = {s["name"].strip(): s.get("id", "") for s in stations}
 
@@ -1114,11 +1110,10 @@ def save_station_special_assignments(station_id: str,
     # Validate every employee up front, collecting what we'll write.
     resolved = []
     for entry in request.assignments:
-        emp_doc = db.collection("employees").document(entry.employeeId).get()
-        if not emp_doc.exists:
+        emp = repo.employees.get(entry.employeeId)
+        if emp is None:
             raise HTTPException(status_code=404,
                                 detail=f"Employee {entry.employeeId} not found")
-        emp = emp_doc.to_dict()
         if not emp.get("isActive", True):
             raise HTTPException(
                 status_code=400,
@@ -1832,11 +1827,9 @@ def add_schedule_employee(schedule_id: str,
             raise HTTPException(status_code=400,
                                 detail="This schedule has no days to add to.")
 
-        emp_snap = (db.collection("employees")
-                    .document(request.employeeId).get())
-        if not emp_snap.exists:
+        employee = repo.employees.get(request.employeeId)
+        if employee is None:
             raise HTTPException(status_code=404, detail="Employee not found")
-        employee = emp_snap.to_dict()
         if not employee.get("isActive", True):
             raise HTTPException(
                 status_code=400,
@@ -1980,11 +1973,10 @@ def _role_label(employee_type):
 
 def _load_rosterable_guard(employee_id):
     """The employee document, refusing anyone who can't be put on duty."""
-    snap = db.collection("employees").document(employee_id).get()
-    if not snap.exists:
+    employee = repo.employees.get(employee_id)
+    if employee is None:
         raise HTTPException(status_code=404,
                             detail=f"Employee {employee_id} not found")
-    employee = snap.to_dict()
     if not employee.get("isActive", True):
         raise HTTPException(
             status_code=400,
@@ -2095,9 +2087,7 @@ def update_schedule_assignment(schedule_id: str,
                            "reliever. One guard cannot hold two slots in the "
                            "same period.")
         else:
-            emp_snap = (db.collection("employees")
-                        .document(target_id).get())
-            guard = emp_snap.to_dict() if emp_snap.exists else {}
+            guard = repo.employees.get(target_id) or {}
         target_name = guard.get("name") or template.get("employeeName", "")
 
         # --- post ------------------------------------------------------
@@ -2400,13 +2390,13 @@ def _assert_inside_duty_window(head_guard_id, report_date, shift_title):
     when the employee can't be read: neither is a reason to lose a
     legitimate report."""
     try:
-        doc = db.collection("employees").document(head_guard_id).get()
+        employee = repo.employees.get(head_guard_id)
     except Exception:
         return
-    if not doc.exists:
+    if employee is None:
         return
 
-    window = HG_DUTY_WINDOWS.get((doc.to_dict() or {}).get("assignedShift"))
+    window = HG_DUTY_WINDOWS.get(employee.get("assignedShift"))
     if window is None:
         return
 
@@ -2442,13 +2432,13 @@ def _assert_shift_is_reportable(head_guard_id, shift_slug, shift_title):
     head guard has none (they're rostered under whichever post they stand
     in for), so there is nothing to check and the report goes through."""
     try:
-        doc = db.collection("employees").document(head_guard_id).get()
+        employee = repo.employees.get(head_guard_id)
     except Exception:
         return  # Lookup trouble must not block a legitimate report.
-    if not doc.exists:
+    if employee is None:
         return
 
-    assigned = (doc.to_dict() or {}).get("assignedShift")
+    assigned = employee.get("assignedShift")
     allowed = HG_REPORTABLE_SHIFTS.get(assigned)
     if allowed is None or shift_slug in allowed:
         return
@@ -3341,8 +3331,7 @@ def submit_special_request(request: SpecialRequestCreateRequest):
 
     # Resolve the employee so the window (and its group) is computed against
     # a real record; fall back to the request's own fields if not found.
-    snap = db.collection("employees").document(employee_id).get()
-    employee = snap.to_dict() if snap.exists else {
+    employee = repo.employees.get(employee_id) or {
         "id": employee_id,
         "assignedStation": request.station.strip(),
     }
@@ -3453,8 +3442,7 @@ def get_special_request_window(employee_id: str):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
-        snap = db.collection("employees").document(employee_id).get()
-        employee = snap.to_dict() if snap.exists else {"id": employee_id}
+        employee = repo.employees.get(employee_id) or {"id": employee_id}
         min_date, max_date, blocked = _special_request_window(employee)
         requested = sorted(
             _employee_special_dates(employee_id, statuses=("pending", "approved")))
@@ -3615,9 +3603,9 @@ def _leave_employee(employee_id, fallback=None):
     """The employee record the rules are evaluated against. Falls back to
     the fields the caller sent so a request can still be filed for an
     employee the collection has lost track of."""
-    snap = db.collection("employees").document(employee_id).get()
-    if snap.exists:
-        return snap.to_dict()
+    employee = repo.employees.get(employee_id)
+    if employee is not None:
+        return employee
     if fallback is None:
         raise HTTPException(status_code=404, detail="Employee not found")
     return fallback

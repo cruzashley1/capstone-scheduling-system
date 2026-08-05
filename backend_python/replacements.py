@@ -28,6 +28,8 @@ report record is stamped replacedBy*, an audit doc is written to
 
 from datetime import datetime, timezone
 
+import repositories
+
 DAY_SHIFTS = ("Morning", "Afternoon")
 HG_SHIFTS = ("HG Day", "HG Night")
 
@@ -172,8 +174,7 @@ def suggest(db, date_iso, station, shift, absent_id):
     offers = _active_offers(db, date_iso)
 
     candidates = []
-    for doc in db.collection("employees").stream():
-        emp = doc.to_dict()
+    for emp in repositories.from_db(db).employees.list():
         emp_id = emp.get("id")
         if (emp_id == absent_id
                 or not emp.get("isActive", True)
@@ -219,11 +220,9 @@ def apply_replacement(db, req):
     station = req.station.strip()
     shift = req.shift
 
-    rep_doc = db.collection("employees").document(
-        req.replacementEmployeeId).get()
-    if not rep_doc.exists:
+    rep = repositories.from_db(db).employees.get(req.replacementEmployeeId)
+    if rep is None:
         raise LookupError("Replacement employee not found")
-    rep = rep_doc.to_dict()
 
     snapshots = list(db.collection("schedules").stream())
     covering = [(s, s.to_dict()) for s in snapshots

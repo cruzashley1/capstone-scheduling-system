@@ -1668,9 +1668,8 @@ def generate_group_schedules(db, group, start_date, rotate=True):
     if not group_stations:
         raise ValueError(f"no stations found for group {group}")
 
-    employees = [doc.to_dict()
-                 for doc in db.collection("employees").stream()
-                 if doc.to_dict().get("isActive", True)]
+    employees = [emp for emp in repositories.from_db(db).employees.list()
+                 if emp.get("isActive", True)]
 
     # Station placement for this cycle. Floating substitute head guards
     # have no home station and are never rotated — they already float

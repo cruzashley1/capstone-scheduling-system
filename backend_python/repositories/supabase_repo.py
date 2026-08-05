@@ -54,3 +54,7 @@ class SupabaseRepository(Repository):
     @property
     def stations(self):
         return SupabaseCollectionRepo(self._client, "stations")
+
+    @property
+    def employees(self):
+        return SupabaseCollectionRepo(self._client, "employees")

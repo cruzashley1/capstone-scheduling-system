@@ -56,3 +56,8 @@ class Repository(ABC):
     @abstractmethod
     def stations(self):
         """CollectionRepo for stations."""
+
+    @property
+    @abstractmethod
+    def employees(self):
+        """CollectionRepo for employees."""

@@ -40,10 +40,15 @@ class DocumentRepository(Repository):
             raise ValueError("DocumentRepository needs a database handle")
         self._db = db
         self._stations = DocumentCollectionRepo(db, "stations")
+        self._employees = DocumentCollectionRepo(db, "employees")
 
     @property
     def stations(self):
         return self._stations
+
+    @property
+    def employees(self):
+        return self._employees
 
     @property
     def db(self):
