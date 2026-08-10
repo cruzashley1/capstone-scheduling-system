@@ -1,35 +1,68 @@
 """
-Repository over Supabase. Not implemented yet — this is the shape the
-migration fills in, kept beside the working implementation so the
-interface has a second reader from the start.
+Repository over Supabase (Postgres), the second implementation of the
+interface in base.py.
 
-Three things every method here will have to honour:
+The job is narrow and strict: behave exactly like DocumentRepository, so
+that flipping DB_BACKEND changes where the data lives and nothing else.
+58 golden files hold the current responses and six testing_*.py suites
+hold the current behaviour; both must stay green across the switch.
 
-1. **camelCase out.** Columns are snake_case (`assigned_station`),
-   because Postgres folds unquoted identifiers to lowercase and
-   `assignedStation` would silently become `assignedstation`, arriving in
-   Flutter as null. Convert at this boundary with `to_camel()`; a column
-   name must never reach a response.
+Four things this layer owes the rest of the backend:
 
-2. **Order is part of the contract.** Postgres does not promise row order
-   without an ORDER BY, so `list()` and `find()` must pin one explicitly
-   to stay byte-identical to what the golden files recorded. Whatever
-   order the document backend produces is the target.
+1. **camelCase out, snake_case in.** Columns are snake_case because
+   Postgres folds unquoted identifiers to lowercase, so `assignedStation`
+   would become `assignedstation` and arrive in Flutter as null. The
+   conversion happens here and nowhere else — a column name must never
+   reach a response, and api.py must never learn a column name.
 
-3. **Missing fields are excluded, not null.** Firestore drops documents
-   that lack a filtered field, and mock_firestore.py copies that. A
-   Postgres column is either NULL or a value, so `find()` has to
-   reproduce the exclusion deliberately — `WHERE col = %s` already does
-   for NULL, but anything stored as an explicit JSON null will not match
-   the old behaviour without care.
+2. **Order is part of the contract.** Postgres promises no row order
+   without ORDER BY. Reads pin `ORDER BY id`, which was measured against
+   the golden files rather than assumed: id order reproduces 54 of 58
+   exactly, and the 4 that move do so by ordering only.
 
-The heavier work lands here too: `days` becomes real `duty_assignments`
-rows, and this layer reassembles the nested JSON the API returns, so
-neither api.py nor Flutter learns that the storage changed.
+3. **`days` is reassembled.** Schedules store their duty entries in the
+   `duty_assignments` table, and this layer rebuilds the nested
+   `days: [{date, entries: [...]}]` structure on read and takes it apart
+   on write. Neither api.py nor Flutter learns that the storage changed.
+
+4. **Firestore's error semantics.** `update()` raises on a missing
+   record, `delete()` does not. The 404 paths depend on the first and the
+   retry-safe withdraw path depends on the second.
+
+What this layer deliberately does NOT do is cap a transaction. The
+document backend refuses past 500 writes because Firestore's batches
+break there; Postgres has no such limit, and inventing one would refuse
+transactions that are perfectly safe.
 """
+
+import os
+import threading
+from contextlib import contextmanager
+from datetime import date, timedelta
+
+from psycopg import sql
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
+from psycopg_pool import ConnectionPool
 
 from repositories.base import (COLLECTIONS, CollectionRepo, Repository,
                                Transaction, TransactionCollection)
+
+# Collections whose records do NOT carry an "id" field in the response.
+# Every other collection stores its own id in the document body, so
+# returning the primary key reproduces it; for these two, returning it
+# would ADD a field that /login and the counters have never had.
+_ID_OMITTED = frozenset({"users", "counters"})
+
+# The table that holds what schedules.days used to hold inline. Not in
+# COLLECTIONS on purpose — it is storage, not vocabulary, and no caller
+# outside this module may reach it.
+_DUTY_TABLE = "duty_assignments"
+
+# The columns of duty_assignments that describe the ROW rather than the
+# entry. They are stripped on the way out; the remaining columns are
+# exactly the 11 keys an entry has always had.
+_DUTY_INTERNAL = ("schedule_id", "day_index", "day_date", "position")
 
 
 def to_camel(name):
@@ -50,126 +83,671 @@ def to_snake(name):
     return "".join(out)
 
 
-def row_to_json(row):
-    """One Postgres row as an API-shaped dict."""
-    return {to_camel(key): value for key, value in row.items()}
+def _period_dates(start_iso, end_iso):
+    """Every date from start to end inclusive, as ISO strings.
 
+    Reconstruction generates the day list from the schedule's own
+    start/end rather than from the duty rows, because a day with no
+    entries produces no rows — rebuilding from rows alone would silently
+    drop empty days and shorten the fortnight. testing_station_rename.py
+    exercises a schedule that is empty on every single day.
+    """
+    first = date.fromisoformat(start_iso)
+    last = date.fromisoformat(end_iso)
+    out = []
+    while first <= last:
+        out.append(first.isoformat())
+        first += timedelta(days=1)
+    return out
+
+
+# ---------------------------------------------------------------------
+# Connection pool
+# ---------------------------------------------------------------------
+#
+# api.py's endpoints are sync `def`, so FastAPI runs them in a thread
+# pool and several can be in flight at once. One shared connection would
+# serialise them and corrupt psycopg's protocol state; a connection per
+# request would pay Supabase's pooler handshake every time.
+#
+# `check` matters more than it looks: Supabase's session pooler drops
+# idle connections, and on Render's free tier the service itself sleeps.
+# Without a liveness check the first request after a quiet spell fails on
+# a dead socket that the pool still believes is good.
+
+_pool = None
+_pool_lock = threading.Lock()
+
+
+def get_pool():
+    """The process-wide connection pool, opened on first use."""
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                url = os.getenv("SUPABASE_DB_URL")
+                if not url:
+                    raise RuntimeError(
+                        "SUPABASE_DB_URL is not set. DB_BACKEND=supabase "
+                        "needs the session-pooler connection string from "
+                        "the Supabase dashboard (Project Settings > "
+                        "Database > Connection string > Session pooler). "
+                        "The direct host is IPv6-only.")
+                _pool = ConnectionPool(
+                    url,
+                    min_size=1,
+                    max_size=int(os.getenv("SUPABASE_POOL_SIZE", "5")),
+                    kwargs={"row_factory": dict_row},
+                    check=ConnectionPool.check_connection,
+                    open=True,
+                )
+    return _pool
+
+
+def close_pool():
+    """Shuts the pool down. For tests and clean process exit."""
+    global _pool
+    with _pool_lock:
+        if _pool is not None:
+            _pool.close()
+            _pool = None
+
+
+# ---------------------------------------------------------------------
+# Schema reflection
+# ---------------------------------------------------------------------
+#
+# The alternative was hardcoding the column lists here, in a second place
+# that has to agree with schema/001_initial.sql forever. Reading them
+# from the database costs one query per process and cannot drift.
+
+class _Schema:
+    """Column names and JSONB columns, per table, read once."""
+
+    def __init__(self, pool):
+        self.columns = {}     # table -> (col, ...) in DDL order
+        self._jsonb = {}      # table -> frozenset of jsonb columns
+        self._by_camel = {}   # table -> {camelCaseKey: column}
+        with pool.connection() as conn:
+            rows = conn.execute("""
+                SELECT table_name, column_name, data_type
+                  FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                 ORDER BY table_name, ordinal_position
+            """).fetchall()
+
+        grouped = {}
+        for row in rows:
+            grouped.setdefault(row["table_name"], []).append(row)
+
+        for table, cols in grouped.items():
+            self.columns[table] = tuple(c["column_name"] for c in cols)
+            self._jsonb[table] = frozenset(
+                c["column_name"] for c in cols if c["data_type"] == "jsonb")
+            self._by_camel[table] = {
+                to_camel(c["column_name"]): c["column_name"] for c in cols}
+
+        missing = [t for t in COLLECTIONS if t not in self.columns]
+        if missing or _DUTY_TABLE not in self.columns:
+            missing = missing + ([] if _DUTY_TABLE in self.columns
+                                 else [_DUTY_TABLE])
+            raise RuntimeError(
+                f"Supabase is missing table(s): {', '.join(missing)}. "
+                f"Apply schema/001_initial.sql to the project first.")
+
+    def column(self, table, key):
+        """The column a camelCase API field maps to.
+
+        Raises rather than dropping the field. A silently ignored write
+        is the worst failure mode available here — the response would
+        look fine and the data would not be there.
+        """
+        try:
+            return self._by_camel[table][key]
+        except KeyError:
+            raise KeyError(
+                f"{table} has no field {key!r}. Known fields: "
+                f"{', '.join(sorted(self._by_camel[table]))}") from None
+
+    def bind(self, table, column, value):
+        """A value ready for a placeholder, wrapped if the column is JSONB.
+
+        psycopg maps a Python list to a Postgres ARRAY by default, which
+        a jsonb column rejects. Everything bound for a jsonb column is
+        wrapped explicitly, dicts included, so neither shape depends on
+        the driver's guess.
+        """
+        if column in self._jsonb[table]:
+            return Jsonb(value)
+        return value
+
+
+_schema = None
+_schema_lock = threading.Lock()
+
+
+def get_schema(pool):
+    global _schema
+    if _schema is None:
+        with _schema_lock:
+            if _schema is None:
+                _schema = _Schema(pool)
+    return _schema
+
+
+# ---------------------------------------------------------------------
+# SQL building
+# ---------------------------------------------------------------------
+#
+# Identifiers go through sql.Identifier rather than f-strings: it quotes
+# them, which is what makes the `group` column work at all — GROUP is
+# reserved, and `SET group = %s` is a syntax error.
+
+def _ident(name):
+    return sql.Identifier(name)
+
+
+def _row_out(table, row):
+    """One Postgres row as the dict the API has always returned."""
+    out = {to_camel(key): value for key, value in row.items()}
+    if table in _ID_OMITTED:
+        out.pop("id", None)
+    return out
+
+
+def _where(schema, table, filters):
+    """(SQL fragment, params) for an equality filter set.
+
+    `col = %s` already excludes rows where the column is NULL, which is
+    exactly the Firestore behaviour find() has to reproduce: a document
+    that LACKS the filtered field is not a match.
+    """
+    if not filters:
+        return sql.SQL(""), []
+    clauses, params = [], []
+    for key, value in filters.items():
+        column = schema.column(table, key)
+        clauses.append(sql.SQL("{} = %s").format(_ident(column)))
+        params.append(schema.bind(table, column, value))
+    return (sql.SQL(" WHERE ") + sql.SQL(" AND ").join(clauses)), params
+
+
+def _assignments(schema, table, fields):
+    """(SET fragment, params) for a partial write."""
+    parts, params = [], []
+    for key, value in fields.items():
+        column = schema.column(table, key)
+        parts.append(sql.SQL("{} = %s").format(_ident(column)))
+        params.append(schema.bind(table, column, value))
+    return sql.SQL(", ").join(parts), params
+
+
+def _upsert_sql(schema, table, data, merge):
+    """(statement, params) for one INSERT ... ON CONFLICT.
+
+    merge=False mirrors Firestore's .set(): the record is REPLACED, so a
+    column absent from `data` goes back to its default rather than
+    keeping the value it happened to have. `SET col = DEFAULT` says that
+    in one statement, with no read first.
+
+    merge=True touches only the given columns.
+    """
+    columns = [schema.column(table, key) for key in data]
+    params = [schema.bind(table, col, value)
+              for col, value in zip(columns, data.values())]
+
+    updates = [sql.SQL("{0} = EXCLUDED.{0}").format(_ident(c))
+               for c in columns if c != "id"]
+    if not merge:
+        untouched = [c for c in schema.columns[table]
+                     if c not in columns and c != "id"]
+        updates += [sql.SQL("{} = DEFAULT").format(_ident(c))
+                    for c in untouched]
+
+    # A record of nothing but its id has nothing to set, and an empty
+    # SET is a syntax error. DO NOTHING says the same thing legally.
+    conflict = (sql.SQL("DO UPDATE SET ") + sql.SQL(", ").join(updates)
+                if updates else sql.SQL("DO NOTHING"))
+
+    statement = sql.SQL(
+        "INSERT INTO {table} ({cols}) VALUES ({vals}) "
+        "ON CONFLICT (id) {conflict}"
+    ).format(
+        table=_ident(table),
+        cols=sql.SQL(", ").join(_ident(c) for c in columns),
+        vals=sql.SQL(", ").join([sql.Placeholder()] * len(columns)),
+        conflict=conflict,
+    )
+    return statement, params
+
+
+def _with_id(doc_id, data):
+    """`data` guaranteed to carry its own id, without mutating the caller's.
+
+    Callers pass the id separately and usually also inside the record;
+    the primary key has to be set either way.
+    """
+    if data.get("id") == doc_id:
+        return data
+    merged = dict(data)
+    merged["id"] = doc_id
+    return merged
+
+
+# ---------------------------------------------------------------------
+# Schedule days <-> duty_assignments
+# ---------------------------------------------------------------------
+
+def _split_days(schedule_id, days):
+    """`days` flattened into duty_assignments rows.
+
+    day_index and position are recorded explicitly because entry order
+    within a day is part of the rendered contract and the ids sort wrong
+    as text — "STA027_0_10" lands between "_0_1" and "_0_2".
+    """
+    rows = []
+    for day_index, day in enumerate(days or []):
+        for position, entry in enumerate(day.get("entries") or []):
+            row = {
+                "schedule_id": schedule_id,
+                "day_index": day_index,
+                "day_date": day.get("date"),
+                "position": position,
+            }
+            for key, value in entry.items():
+                row[to_snake(key)] = value
+            rows.append(row)
+    return rows
+
+
+def _write_days(cursor, schema, schedule_id, days):
+    """Replaces every duty row for one schedule.
+
+    Delete-then-insert rather than a diff: a regenerated schedule shares
+    almost no entry ids with the one it replaces, so a diff would be more
+    code for the same writes. Inside a transaction this is atomic; on its
+    own it is one statement pair against a single schedule.
+    """
+    cursor.execute(
+        sql.SQL("DELETE FROM {} WHERE schedule_id = %s").format(
+            _ident(_DUTY_TABLE)),
+        [schedule_id])
+
+    rows = _split_days(schedule_id, days)
+    if not rows:
+        return
+
+    columns = list(rows[0])
+    unknown = [c for c in columns if c not in schema.columns[_DUTY_TABLE]]
+    if unknown:
+        raise KeyError(
+            f"schedule entries carry unknown field(s) {unknown}; "
+            f"{_DUTY_TABLE} would drop them silently")
+
+    template = sql.SQL("({})").format(
+        sql.SQL(", ").join([sql.Placeholder()] * len(columns)))
+    params = []
+    for row in rows:
+        params.extend(schema.bind(_DUTY_TABLE, c, row.get(c)) for c in columns)
+
+    cursor.execute(
+        sql.SQL("INSERT INTO {table} ({cols}) VALUES {vals}").format(
+            table=_ident(_DUTY_TABLE),
+            cols=sql.SQL(", ").join(_ident(c) for c in columns),
+            vals=sql.SQL(", ").join([template] * len(rows)),
+        ),
+        params)
+
+
+def _attach_days(cursor, schedules):
+    """Puts `days` back onto schedule dicts, in place, and returns them.
+
+    One query for every schedule in the result rather than one per
+    schedule: /schedules reads all 16 at once and the per-schedule
+    version would be 17 round trips to Supabase instead of 2.
+    """
+    if not schedules:
+        return schedules
+
+    ids = [s["id"] for s in schedules]
+    cursor.execute(
+        sql.SQL("SELECT * FROM {} WHERE schedule_id = ANY(%s) "
+                "ORDER BY schedule_id, day_index, position").format(
+                    _ident(_DUTY_TABLE)),
+        [ids])
+
+    grouped = {}
+    for row in cursor.fetchall():
+        entry = {to_camel(k): v for k, v in row.items()
+                 if k not in _DUTY_INTERNAL}
+        grouped.setdefault(row["schedule_id"], {}).setdefault(
+            row["day_index"], []).append(entry)
+
+    for schedule in schedules:
+        by_index = grouped.get(schedule["id"], {})
+        dates = _period_dates(schedule["startDate"], schedule["endDate"])
+        schedule["days"] = [
+            {"date": day_date, "entries": by_index.get(index, [])}
+            for index, day_date in enumerate(dates)]
+    return schedules
+
+
+# ---------------------------------------------------------------------
+# Collections
+# ---------------------------------------------------------------------
 
 class SupabaseCollectionRepo(CollectionRepo):
-    def __init__(self, client, table):
-        self._client = client
-        self._table = table
+    """One table, reached with its own connection per call.
 
-    def list(self):
-        raise NotImplementedError("Supabase backend not implemented yet")
-
-    def get(self, doc_id):
-        raise NotImplementedError("Supabase backend not implemented yet")
-
-    def find(self, **filters):
-        raise NotImplementedError("Supabase backend not implemented yet")
-
-    def upsert(self, doc_id, data, merge=False):
-        # INSERT INTO <table> (...) VALUES (...)
-        # ON CONFLICT (id) DO UPDATE SET ...
-        # merge=False REPLACES the row — columns absent from `data` go
-        # back to their defaults, which is what Firestore's .set() does.
-        # merge=True updates only the given columns.
-        raise NotImplementedError("Supabase backend not implemented yet")
-
-    def upsert_many(self, records):
-        # One multi-row INSERT ... ON CONFLICT. No 500-write cap to work
-        # around here, though a few hundred thousand rows would still
-        # want chunking for statement size.
-        raise NotImplementedError("Supabase backend not implemented yet")
-
-    def update(self, doc_id, fields):
-        # UPDATE <table> SET ... WHERE id = %s
-        # Must RAISE when no row matched, not silently insert: callers
-        # depend on Firestore's .update() failing on a missing document
-        # (check rowcount and raise).
-        raise NotImplementedError("Supabase backend not implemented yet")
-
-    def delete(self, doc_id):
-        # DELETE FROM <table> WHERE id = %s
-        # Deleting nothing is not an error here, unlike update().
-        raise NotImplementedError("Supabase backend not implemented yet")
-
-    def delete_many(self, doc_ids):
-        # DELETE FROM <table> WHERE id = ANY(%s)
-        raise NotImplementedError("Supabase backend not implemented yet")
-
-    def update_where(self, filters, fields):
-        # UPDATE <table> SET ... WHERE <filters>, returning rowcount.
-        # The whole point of this method: no query-then-batch, no
-        # references — one statement, and it is already atomic.
-        raise NotImplementedError("Supabase backend not implemented yet")
-
-
-class SupabaseTransactionCollection(TransactionCollection):
-    """Statements inside one BEGIN/COMMIT.
-
-    Postgres has the easier job here: update_where and delete_where are
-    single statements rather than a query followed by N queued writes, so
-    there is no per-batch cap to respect and no risk of a fan-out being
-    split. The 500-write refusal in the document backend has no
-    counterpart — do not add one.
+    Each method borrows a pooled connection and returns it, so nothing
+    here holds state between calls. Writes commit on their own; the
+    all-or-nothing case is what transaction() is for.
     """
 
-    def __init__(self, connection, table):
-        self._connection = connection
+    def __init__(self, pool, schema, table):
+        self._pool = pool
+        self._schema = schema
+        self._table = table
+
+    # --- reads --------------------------------------------------------
+
+    def _select(self, filters=None):
+        where, params = _where(self._schema, self._table, filters or {})
+        statement = sql.SQL("SELECT * FROM {}").format(_ident(self._table))
+        statement = statement + where + sql.SQL(" ORDER BY id")
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(statement, params)
+            rows = [_row_out(self._table, r) for r in cur.fetchall()]
+            return self._hydrate(cur, rows)
+
+    def _hydrate(self, cursor, rows):
+        """Hook for tables whose records are assembled from more than one
+        table. Only schedules needs it."""
+        return rows
+
+    def list(self):
+        return self._select()
+
+    def get(self, doc_id):
+        rows = self._select({"id": doc_id})
+        return rows[0] if rows else None
+
+    def find(self, **filters):
+        # find() with no filters must behave like list() — api.py calls
+        # find(**{}) when no cycle is given.
+        return self._select(filters)
+
+    # --- writes -------------------------------------------------------
+
+    def upsert(self, doc_id, data, merge=False):
+        data = _with_id(doc_id, data)
+        statement, params = _upsert_sql(self._schema, self._table, data, merge)
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(statement, params)
+
+    def upsert_many(self, records):
+        # Grouped by column set, because the records need not agree on
+        # which fields they carry and one INSERT has one column list.
+        # No 500-write cap to work around here.
+        if not records:
+            return
+        groups = {}
+        for doc_id, data in records.items():
+            data = _with_id(doc_id, data)
+            groups.setdefault(tuple(data), []).append(data)
+
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            for keys, batch in groups.items():
+                columns = [self._schema.column(self._table, k) for k in keys]
+                updates = [sql.SQL("{0} = EXCLUDED.{0}").format(_ident(c))
+                           for c in columns if c != "id"]
+                conflict = (sql.SQL("DO UPDATE SET ")
+                            + sql.SQL(", ").join(updates)
+                            if updates else sql.SQL("DO NOTHING"))
+                template = sql.SQL("({})").format(
+                    sql.SQL(", ").join([sql.Placeholder()] * len(columns)))
+                params = []
+                for data in batch:
+                    params.extend(
+                        self._schema.bind(self._table, col, data[key])
+                        for col, key in zip(columns, keys))
+                cur.execute(
+                    sql.SQL("INSERT INTO {table} ({cols}) VALUES {vals} "
+                            "ON CONFLICT (id) {conflict}").format(
+                                table=_ident(self._table),
+                                cols=sql.SQL(", ").join(
+                                    _ident(c) for c in columns),
+                                vals=sql.SQL(", ").join(
+                                    [template] * len(batch)),
+                                conflict=conflict),
+                    params)
+
+    def update(self, doc_id, fields):
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            _update_one(cur, self._schema, self._table, doc_id, fields)
+
+    def delete(self, doc_id):
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                sql.SQL("DELETE FROM {} WHERE id = %s").format(
+                    _ident(self._table)),
+                [doc_id])
+
+    def delete_many(self, doc_ids):
+        doc_ids = list(doc_ids)
+        if doc_ids:
+            with self._pool.connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    sql.SQL("DELETE FROM {} WHERE id = ANY(%s)").format(
+                        _ident(self._table)),
+                    [doc_ids])
+        # The count asked for, not the count found — same as the document
+        # backend, which cannot tell the difference either.
+        return len(doc_ids)
+
+    def update_where(self, filters, fields):
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            return _update_where(cur, self._schema, self._table,
+                                 filters, fields)
+
+
+def _update_one(cursor, schema, table, doc_id, fields):
+    """UPDATE ... WHERE id, raising when nothing matched.
+
+    Firestore's .update() fails on a missing document and mock_firestore
+    copies that with a KeyError; the 404 paths in api.py are built on it.
+    An ON CONFLICT-style insert here would turn "not found" into a
+    half-populated row that violates NOT NULL a moment later.
+    """
+    if not fields:
+        return
+    sets, params = _assignments(schema, table, fields)
+    cursor.execute(
+        sql.SQL("UPDATE {} SET {} WHERE id = %s").format(
+            _ident(table), sets),
+        params + [doc_id])
+    if cursor.rowcount == 0:
+        raise KeyError(f"No document to update: {table}/{doc_id}")
+
+
+def _update_where(cursor, schema, table, filters, fields):
+    """UPDATE ... WHERE <filters>, returning the row count.
+
+    The method that keeps document references off the interface: what
+    Firestore does as query-then-batch is one statement here, and it is
+    already atomic on its own.
+    """
+    if not fields:
+        return 0
+    sets, set_params = _assignments(schema, table, fields)
+    where, where_params = _where(schema, table, filters)
+    cursor.execute(
+        sql.SQL("UPDATE {} SET {}").format(_ident(table), sets) + where,
+        set_params + where_params)
+    return cursor.rowcount
+
+
+class SupabaseSchedulesRepo(SupabaseCollectionRepo):
+    """Schedules, whose `days` lives in duty_assignments.
+
+    Every read reassembles it and every write takes it apart, so the
+    decomposition is invisible above this class — api.py still receives
+    the nested structure it always has.
+    """
+
+    def _hydrate(self, cursor, rows):
+        return _attach_days(cursor, rows)
+
+    def upsert(self, doc_id, data, merge=False):
+        data = _with_id(doc_id, data)
+        days = data.get("days")
+        # merge=True without days must leave the existing duties alone;
+        # a replace with no days really does mean "no duties".
+        touches_days = "days" in data or not merge
+        data = {k: v for k, v in data.items() if k != "days"}
+
+        statement, params = _upsert_sql(self._schema, self._table, data, merge)
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            with conn.transaction():
+                cur.execute(statement, params)
+                if touches_days:
+                    _write_days(cur, self._schema, doc_id, days)
+
+    def upsert_many(self, records):
+        for doc_id, data in records.items():
+            self.upsert(doc_id, data)
+
+    def update(self, doc_id, fields):
+        days = fields.get("days")
+        touches_days = "days" in fields
+        fields = {k: v for k, v in fields.items() if k != "days"}
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            with conn.transaction():
+                if fields:
+                    _update_one(cur, self._schema, self._table, doc_id, fields)
+                elif touches_days and not _exists(cur, self._table, doc_id):
+                    raise KeyError(
+                        f"No document to update: {self._table}/{doc_id}")
+                if touches_days:
+                    _write_days(cur, self._schema, doc_id, days)
+
+
+def _exists(cursor, table, doc_id):
+    cursor.execute(
+        sql.SQL("SELECT 1 FROM {} WHERE id = %s").format(_ident(table)),
+        [doc_id])
+    return cursor.fetchone() is not None
+
+
+# ---------------------------------------------------------------------
+# Transactions
+# ---------------------------------------------------------------------
+
+class SupabaseTransactionCollection(TransactionCollection):
+    """Writes on the transaction's connection, landing only at COMMIT.
+
+    Unlike the document backend nothing is queued: the statements run
+    immediately, inside an open BEGIN, and the rollback on an exception
+    is what makes them all-or-nothing. That also means update_where's
+    matching happens now, which is the documented behaviour.
+    """
+
+    def __init__(self, cursor, schema, table):
+        self._cursor = cursor
+        self._schema = schema
         self._table = table
 
     def upsert(self, doc_id, data, merge=False):
-        raise NotImplementedError("Supabase backend not implemented yet")
+        data = _with_id(doc_id, data)
+        days = data.get("days")
+        schedules = self._table == "schedules"
+        touches_days = schedules and ("days" in data or not merge)
+        if schedules:
+            data = {k: v for k, v in data.items() if k != "days"}
+
+        statement, params = _upsert_sql(self._schema, self._table, data, merge)
+        self._cursor.execute(statement, params)
+        if touches_days:
+            _write_days(self._cursor, self._schema, doc_id, days)
 
     def update(self, doc_id, fields):
-        raise NotImplementedError("Supabase backend not implemented yet")
+        _update_one(self._cursor, self._schema, self._table, doc_id, fields)
 
     def delete(self, doc_id):
-        raise NotImplementedError("Supabase backend not implemented yet")
+        # duty_assignments goes with it: the foreign key is ON DELETE
+        # CASCADE precisely so a deleted schedule cannot leave orphans.
+        self._cursor.execute(
+            sql.SQL("DELETE FROM {} WHERE id = %s").format(
+                _ident(self._table)),
+            [doc_id])
 
     def update_where(self, filters, fields):
-        # UPDATE <table> SET ... WHERE ... — one statement, rowcount back.
-        raise NotImplementedError("Supabase backend not implemented yet")
+        return _update_where(self._cursor, self._schema, self._table,
+                             filters, fields)
 
     def delete_where(self, filters):
-        # DELETE FROM <table> WHERE ... — likewise.
-        raise NotImplementedError("Supabase backend not implemented yet")
+        where, params = _where(self._schema, self._table, filters)
+        self._cursor.execute(
+            sql.SQL("DELETE FROM {}").format(_ident(self._table)) + where,
+            params)
+        return self._cursor.rowcount
 
 
 class SupabaseTransaction(Transaction):
-    def __init__(self, connection):
-        self._connection = connection
+    """One BEGIN/COMMIT, shared by every collection reached through it."""
+
+    def __init__(self, cursor, schema):
+        self._cursor = cursor
+        self._schema = schema
+        self._collections = {}
 
     def collection(self, name):
         if name not in COLLECTIONS:
             raise KeyError(f"unknown collection {name!r}")
-        return SupabaseTransactionCollection(self._connection, name)
+        if name not in self._collections:
+            self._collections[name] = SupabaseTransactionCollection(
+                self._cursor, self._schema, name)
+        return self._collections[name]
 
 
 class SupabaseRepository(Repository):
-    def __init__(self, client=None):
-        self._client = client
+    def __init__(self, pool=None):
+        self._pool = pool or get_pool()
+        self._schema = get_schema(self._pool)
+        self._repos = {}
 
     def collection(self, name):
         if name not in COLLECTIONS:
             raise KeyError(f"unknown collection {name!r}")
-        return SupabaseCollectionRepo(self._client, name)
+        if name not in self._repos:
+            cls = (SupabaseSchedulesRepo if name == "schedules"
+                   else SupabaseCollectionRepo)
+            self._repos[name] = cls(self._pool, self._schema, name)
+        return self._repos[name]
 
+    @contextmanager
     def transaction(self):
-        # BEGIN ... COMMIT, rolling back if the block raises. Must be a
-        # @contextmanager like the document backend's, so call sites read
-        # identically.
-        raise NotImplementedError("Supabase backend not implemented yet")
+        """Yields a Transaction, committing only on a clean exit.
+
+        An exception rolls the whole thing back, so a half-finished
+        station rename — schedules renamed, employees not — cannot reach
+        the database.
+        """
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            with conn.transaction():
+                yield SupabaseTransaction(cur, self._schema)
 
     def next_sequence(self, counter_name):
-        # One statement, no transaction to manage:
-        #
-        #   INSERT INTO counters (id, value) VALUES (%s, 1)
-        #   ON CONFLICT (id) DO UPDATE SET value = counters.value + 1
-        #   RETURNING value
-        #
-        # Atomic because it is a single statement, so two concurrent
-        # callers cannot be handed the same number.
-        raise NotImplementedError("Supabase backend not implemented yet")
+        """The counter increment, as one statement.
+
+        Atomic because it is single: two callers cannot both read 976 and
+        both write 977, which is what would hand two new employees the
+        same username. Starting at 1 matches the existing counters.
+        """
+        with self._pool.connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO counters (id, value) VALUES (%s, 1) "
+                "ON CONFLICT (id) DO UPDATE SET value = counters.value + 1 "
+                "RETURNING value",
+                [counter_name])
+            return cur.fetchone()["value"]

@@ -480,14 +480,51 @@ CREATE INDEX IF NOT EXISTS notifications_employee_unread_idx
 -- migration into a debugging session. Add them later, once the data is
 -- known clean, as their own reviewed change.
 --
--- ROW LEVEL SECURITY. Supabase enables RLS per table for clients that
--- talk to PostgREST with an anon key. This backend connects as the
--- postgres role over the session pooler and does its own auth, so RLS
--- would be bypassed anyway and is not a substitute for it. If the
--- Flutter app is ever pointed straight at Supabase, this becomes
--- mandatory — until then it is dead configuration.
---
 -- NOT NULL on the absent-vs-null columns. See below.
+
+
+-- =====================================================================
+-- Row level security
+-- =====================================================================
+--
+-- Enabled on every table, with NO policies, which denies everything by
+-- default. That is the intent, not an oversight.
+--
+-- It costs this backend nothing. Measured, not assumed: the session
+-- pooler connects as `postgres`, and that role carries rolbypassrls, so
+-- RLS never applies to a query from api.py. It is also the table owner,
+-- which bypasses RLS a second way absent FORCE ROW LEVEL SECURITY.
+--
+-- What it buys: Supabase publishes a PostgREST endpoint for this project
+-- whether or not anything uses it, and the anon key is a publishable
+-- value. Without RLS that endpoint serves all 572 employee rows to
+-- anyone holding it. With RLS and no policies it serves nothing.
+--
+-- So the earlier reasoning here — "the backend bypasses it, therefore it
+-- is dead configuration" — was only half true. Bypassed by US is not the
+-- same as bypassed by EVERYONE.
+--
+-- If the Flutter app is ever pointed straight at Supabase, policies have
+-- to be written before anything will read; empty results, not errors,
+-- are the symptom to expect.
+-- =====================================================================
+
+ALTER TABLE stations                     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE employees                    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users                        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE counters                     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rotation_cycles              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE station_rotation_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE special_assignments          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE schedules                    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duty_assignments             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attendance_reports           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE absence_requests             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE special_requests             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE leave_requests               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cover_offers                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE replacements                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE employee_notifications       ENABLE ROW LEVEL SECURITY;
 
 
 -- =====================================================================
