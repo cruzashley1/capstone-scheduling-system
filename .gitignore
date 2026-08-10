@@ -17,7 +17,9 @@ backend_python/mock_data/
 # Recorded responses used to prove the Supabase migration did not change
 # any response shape. Same employee records as mock_data/, so same rule;
 # regenerate with `python golden_capture.py capture`.
-backend_python/golden/
+# The glob also covers the dated backups taken before a re-baseline
+# (golden_pre_supabase_YYYYMMDD/), which hold the same real records.
+backend_python/golden*/
 
 # --- Python ---
 __pycache__/

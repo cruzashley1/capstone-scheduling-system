@@ -19,6 +19,25 @@ Only GET endpoints are called. POST/PUT/DELETE would mutate mock_data/ and
 make the next run differ from the last for reasons that have nothing to do
 with the migration, so the roster-changing half of the API is deliberately
 out of scope — see "What this does not cover" at the bottom of this file.
+The write half has its own suite, testing_supabase_api.py, which drives
+the real endpoints against Supabase and restores the corpus afterwards.
+
+RE-BASELINED 2026-08-10 against DB_BACKEND=supabase. Two consequences:
+
+* `compare` against the MOCK backend now FAILS by design, on the same
+  1636 differences the re-baseline was reviewed for — nulls where a
+  document simply lacked a field, and the four order-only endpoints
+  (employees, special-assignments, special-assignments-cycle,
+  stations-pools). Supabase is the baseline now; mock is the one that
+  differs. Point compare at the Supabase server.
+* These files are DATE-SENSITIVE and rot. Leave windows, active leaves
+  and duty status all move with the clock, so a comparison run weeks
+  later reports differences that are the calendar's doing and not the
+  code's. When that happens, the way to tell them apart is to run the
+  two backends side by side on the same minute and diff those against
+  each other — the same-day comparison is the one that isolates a
+  backend change, not the comparison against a file recorded in the
+  past.
 
 The server must already be running, in whichever mode you want to record:
 
