@@ -1,28 +1,35 @@
 """
-One-off migration: hash the stored passwords, and strip the readable
-copies off the employee records.
+Repairs passwords in the mock_data corpus: hashes any that are still
+plain text, and masks the readable copies on employee records.
+
+    python migrate_passwords.py            # report only, writes nothing
+    python migrate_passwords.py --apply    # perform the repair
 
 Two things are converted:
 
 1. `mock_data/_auth.json` — every plain-text `password` becomes a bcrypt
    hash. Records already hashed are left alone, so re-running is safe.
-2. The `password` field on each employee — replaced with the mask. This
-   field was only ever a readable copy for the admin screens; the
-   credential that actually gets checked lives in Firebase Auth (or, in
-   development, in _auth.json). Removing it loses nothing that can still
-   be verified.
+2. The `password` field on each employee in `mock_data/employees.json` —
+   replaced with the mask. That field was only ever a readable copy for
+   the admin screens; the credential that actually gets checked lives in
+   _auth.json, and after loading, in Supabase's auth_accounts table.
 
-Nobody is locked out. The hash in _auth.json is computed FROM the
-existing plain-text password, so every current password keeps working —
-what changes is that the stored form can no longer be read back.
+Nobody is locked out. Each hash is computed FROM the existing plain-text
+password, so every current password keeps working — what changes is that
+the stored form can no longer be read back.
 
-    python migrate_passwords.py            # report only, writes nothing
-    python migrate_passwords.py --apply    # perform the migration
+This has already been run against the current corpus: all 574 accounts
+are hashed and all 573 employee records carry the mask. It survives as
+the repair tool `load_supabase.py` names when its validator refuses to
+load an unhashed corpus, which is the one situation where it is needed
+again — a re-imported or hand-edited mock_data.
 
-Run it in the mode you want to convert: USE_MOCK_DB=1 rewrites
-mock_data/, USE_MOCK_DB=0 rewrites Firestore. Real Firebase Auth is not
-touched in either case — it already hashes, and its records need no
-migration.
+It operates on the JSON FILES and knows nothing about a backend. That is
+deliberate: the corpus is what gets loaded into Supabase, so it must be
+correct BEFORE the loader runs, and a tool that needed a working backend
+to fix the input to that backend would be circular. It previously went
+through firebase_init and rewrote employees via db.collection(); nothing
+here talks to a database any more.
 """
 
 import argparse
@@ -30,25 +37,31 @@ import json
 import os
 import sys
 
-import firebase_init
+import atomic_write
 import passwords
-from mock_firestore import DEFAULT_DATA_DIR
 
-AUTH_FILE = os.path.join(DEFAULT_DATA_DIR, "_auth.json")
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "mock_data")
+AUTH_FILE = os.path.join(DATA_DIR, "_auth.json")
+EMPLOYEES_FILE = os.path.join(DATA_DIR, "employees.json")
+
+
+def _load(path):
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
 
 
 def migrate_auth_file(apply):
     """Hashes the plain-text passwords in mock_data/_auth.json."""
-    if not os.path.exists(AUTH_FILE):
-        print(f"_auth.json  not found at {AUTH_FILE} — skipping "
-              "(nothing to migrate in real-Firebase mode).")
-        return 0, 0
-
-    with open(AUTH_FILE, encoding="utf-8") as fh:
-        users = json.load(fh)
+    users = _load(AUTH_FILE)
+    if users is None:
+        print(f"_auth.json    not found at {AUTH_FILE} — skipping")
+        return 0
 
     already, converted = 0, 0
-    for uid, record in users.items():
+    for record in users.values():
         stored = record.get("password")
         if stored is None:
             continue
@@ -60,37 +73,30 @@ def migrate_auth_file(apply):
         converted += 1
 
     if apply and converted:
-        import atomic_write
-
         atomic_write.write_json(AUTH_FILE, users)
 
-    print(f"_auth.json  {len(users)} accounts: "
+    print(f"_auth.json    {len(users)} accounts: "
           f"{converted} to hash, {already} already hashed")
-    return converted, already
+    return converted
 
 
-def migrate_employee_records(db, apply):
+def migrate_employee_records(apply):
     """Replaces the readable `password` copy on employees with the mask."""
-    docs = list(db.collection("employees").stream())
-    readable = []
-    for doc in docs:
-        data = doc.to_dict() or {}
-        stored = data.get("password")
-        if stored and stored != passwords.MASK:
-            readable.append(doc.id)
+    employees = _load(EMPLOYEES_FILE)
+    if employees is None:
+        print(f"employees     not found at {EMPLOYEES_FILE} — skipping")
+        return 0
+
+    readable = [eid for eid, data in employees.items()
+                if data.get("password")
+                and data.get("password") != passwords.MASK]
 
     if apply and readable:
-        batch = db.batch()
-        for index, employee_id in enumerate(readable, start=1):
-            batch.update(db.collection("employees").document(employee_id),
-                         {"password": passwords.MASK})
-            # Firestore caps a batch at 500 writes.
-            if index % 400 == 0:
-                batch.commit()
-                batch = db.batch()
-        batch.commit()
+        for employee_id in readable:
+            employees[employee_id]["password"] = passwords.MASK
+        atomic_write.write_json(EMPLOYEES_FILE, employees)
 
-    print(f"employees   {len(docs)} records: "
+    print(f"employees     {len(employees)} records: "
           f"{len(readable)} carrying a readable password")
     return len(readable)
 
@@ -98,29 +104,27 @@ def migrate_employee_records(db, apply):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true",
-                        help="perform the migration (default: report only)")
+                        help="perform the repair (default: report only)")
     args = parser.parse_args()
 
-    mode = "mock_data/" if firebase_init.MOCK_MODE else "REAL FIRESTORE"
-    print(f"Target: {mode}")
+    print(f"Target: {DATA_DIR}")
     print(f"Action: {'APPLY' if args.apply else 'report only'}\n")
 
-    db = firebase_init.get_db()
-
-    to_hash, _ = migrate_auth_file(args.apply)
-    readable = migrate_employee_records(db, args.apply)
+    to_hash = migrate_auth_file(args.apply)
+    readable = migrate_employee_records(args.apply)
 
     print()
     if not args.apply:
         if to_hash or readable:
-            print("Nothing was written. Re-run with --apply to migrate.")
+            print("Nothing was written. Re-run with --apply to repair.")
         else:
             print("Already migrated — nothing to do.")
         return 0
 
     print("Done. Every existing password still works: the hashes were "
           "computed from them.\nWhat changed is that the stored form can "
-          "no longer be read back.")
+          "no longer be read back.\n\nRe-run load_supabase.py to push the "
+          "repaired corpus to Supabase.")
     return 0
 
 

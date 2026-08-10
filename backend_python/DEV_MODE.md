@@ -12,17 +12,17 @@ zero Firebase reads.
 
 ## One-time setup
 
-Export a snapshot of the real database. This is the only step that costs reads
-(one per document, charged once). Leave `USE_MOCK_DB=1` in `.env` — a shell
-variable overrides it, so you never have to edit the file:
+> **Changed 2026-08-10.** `export_firestore.py` is gone. It built `mock_data/`
+> from a Firestore snapshot once, months ago; every day since has run offline,
+> so `mock_data/` has long been the live corpus rather than a copy of anything.
+> It is now the *source* the Supabase loader reads, not a derivative — there is
+> nothing left to export it from, and nothing to re-export it for.
+>
+> There is no setup step any more. `mock_data/` already exists; if you lose it,
+> restore it from a backup, because it cannot be rebuilt. A fuller rewrite of
+> this file comes with step 5 of the migration.
 
-```powershell
-# PowerShell, in backend_python/
-$env:USE_MOCK_DB = "0"; python export_firestore.py; $env:USE_MOCK_DB = ""
-```
-
-The export refuses to run in mock mode, which is a safety check, not an error —
-it would otherwise export the mock onto itself. Then start the server as usual:
+Start the server as usual:
 
 ```bash
 uvicorn api:app --reload --port 8000
@@ -53,8 +53,8 @@ startup. Flutter needs no changes — same host, same port, same endpoints.
   `password` field on an employee record is a mask, so a forgotten password
   is replaced rather than looked up — Employee Detail → Password → **Reset**,
   which issues a new one and shows it once.
-- **To start clean**, delete `mock_data/` and re-run `export_firestore.py`
-  (costs reads again), or restore the folder from a copy you kept.
+- **To start clean**, restore `mock_data/` from a copy you kept. It can no
+  longer be regenerated — see the note under One-time setup.
 - **To go back to real Firestore**, set `USE_MOCK_DB=0` and restart.
 
 Keep a zipped copy of `mock_data/` after the first export. Restoring from it is

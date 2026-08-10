@@ -1,10 +1,13 @@
 """
 Firestore data model for the Schedulr scheduling engine.
 
-Your actual stack is Flutter -> FastAPI -> Firestore (confirmed from
-api.py / main.py), NOT a SQL database - this replaces the earlier
-SQLAlchemy draft, which wrongly assumed tables/foreign keys/unique
-constraints that don't exist in Firestore.
+OUT OF DATE as of the Supabase migration (2026-08). The stack is
+Flutter -> FastAPI -> Postgres now, so the paragraph that used to sit
+here — arguing the stack was Firestore and NOT a SQL database, citing
+api.py and a main.py that no longer exists — had it exactly backwards.
+The real schema is schema/001_initial.sql; treat the notes below as
+history. Only the request/response models further down are live, and
+those are imported by api.py.
 
 Two corrections from our earlier discussion, based on your plan doc
 and existing api.py:
