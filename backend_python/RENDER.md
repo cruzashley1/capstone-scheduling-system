@@ -99,8 +99,8 @@ INFO:     Uvicorn running on http://0.0.0.0:10000
 Then check it from your machine:
 
 ```bash
-curl https://sched-api.onrender.com/
-curl https://sched-api.onrender.com/employees | head -c 400
+curl https://YOUR-SERVICE.onrender.com/
+curl https://YOUR-SERVICE.onrender.com/employees | head -c 400
 ```
 
 `/employees` should return 573 records. If it does, the deploy is real —
@@ -139,25 +139,81 @@ auth switch falls through to the offline stand-in, which reads
 
 ---
 
+## Finding your URL
+
+**Do not assume the hostname.** `.onrender.com` subdomains are globally
+unique across every Render user, so if the name you asked for was taken,
+Render gave your service a suffixed one — `sched-api-a7f3.onrender.com`
+rather than `sched-api.onrender.com`. Visiting the un-suffixed name lands
+you on a stranger's API, which is confusing precisely because it answers.
+
+Your real URL is on the Render dashboard, directly under the service name.
+
+You can tell yours apart at a glance: this API answers `/` with JSON,
+
+```json
+{"message": "Python backend is running"}
+```
+
+so anything that is not that JSON is not this service.
+
+---
+
 ## Pointing the app at it (step 7)
 
-`ApiService.baseUrl` takes the full origin at build time:
+`ApiService.baseUrl` takes the full origin at build time. Use
+`API_BASE_URL`, not `API_HOST` — `API_HOST` is the LAN-development path
+and hardcodes `http://` and `:8000`, so it cannot express an HTTPS origin
+on port 443.
+
+The origin lives in `scheduling_system/config/*.json`, so it is set in one
+place rather than retyped into every command:
+
+| File | Points at |
+|---|---|
+| `config/render.json` | the deployed Render API — **edit this to your URL** |
+| `config/local.json` | uvicorn on this machine (empty value → platform defaults) |
+
+### From Android Studio (the Run button)
+
+This is the normal workflow here — no APK export involved. The switch is a
+one-time change to the run configuration:
+
+1. **Run** → **Edit Configurations…**
+2. Select the Flutter configuration (usually `main.dart`).
+3. In **Additional run args**, put:
+
+   ```
+   --dart-define-from-file=config/render.json
+   ```
+
+4. **OK**, then hit Run as usual.
+
+Worth duplicating the configuration so you have two, `main.dart (render)`
+and `main.dart (local)`, differing only in that argument. Switching backend
+then costs one dropdown, and nothing in the code changes — which matters
+because a hardcoded URL is exactly the kind of thing that gets committed by
+accident and demoed against the wrong database.
+
+The emulator reaches Render over normal HTTPS. The `10.0.2.2` alias is only
+for loopback to your own machine and is bypassed entirely when
+`API_BASE_URL` is set.
+
+### From the command line
 
 ```bash
-flutter build apk --release \
-  --dart-define=API_BASE_URL=https://sched-api.onrender.com
+flutter run --dart-define-from-file=config/render.json
+flutter run -d chrome --dart-define-from-file=config/render.json
+
+# or a one-off without touching the config files
+flutter run --dart-define=API_BASE_URL=https://YOUR-SERVICE.onrender.com
 ```
 
-Use `API_BASE_URL`, not `API_HOST`. `API_HOST` is the LAN-development path
-and hardcodes `http://` and `:8000`, so it cannot express an HTTPS origin on
-port 443.
+### Confirming which backend the app is actually on
 
-For Chrome during development:
-
-```bash
-flutter run -d chrome \
-  --dart-define=API_BASE_URL=https://sched-api.onrender.com
-```
+Cheapest check: stop your local uvicorn, then use the app. If it still
+loads employees, it is talking to Render. If it fails, it was on localhost
+the whole time.
 
 ---
 

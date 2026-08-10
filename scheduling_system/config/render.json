@@ -1,0 +1,4 @@
+{
+  "_comment": "Points the app at the deployed Render API. Replace the host below with YOUR service's URL, copied from the Render dashboard — the .onrender.com subdomain is globally unique across all Render users, so the name you asked for may have been taken and suffixed.",
+  "API_BASE_URL": "https://YOUR-SERVICE.onrender.com"
+}

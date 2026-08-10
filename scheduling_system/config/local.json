@@ -1,0 +1,4 @@
+{
+  "_comment": "Local development against uvicorn on this machine. An empty API_BASE_URL makes ApiService fall through to its platform defaults: 10.0.2.2:8000 on an Android emulator, 127.0.0.1:8000 elsewhere.",
+  "API_BASE_URL": ""
+}

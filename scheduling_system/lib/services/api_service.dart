@@ -21,11 +21,11 @@ import '../models/station_roster.dart';
 class ApiService {
   // The deployed API, passed in whole at build time:
   //   flutter build apk --release \
-  //     --dart-define=API_BASE_URL=https://sched-api.onrender.com
+  //     --dart-define=API_BASE_URL=https://YOUR-SERVICE.onrender.com
   //
   // This has to be the FULL origin, not a host. API_HOST below cannot
   // reach Render: it hardcodes "http://" and ":8000", so a Render host
-  // would build http://sched-api.onrender.com:8000 -- wrong scheme and a
+  // would build http://YOUR-SERVICE.onrender.com:8000 -- wrong scheme and a
   // port nothing listens on. Render serves HTTPS on 443.
   static const String _apiBaseUrlOverride =
       String.fromEnvironment("API_BASE_URL");
