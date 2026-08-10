@@ -1,0 +1,50 @@
+# Render blueprint for the Sched API.
+#
+# rootDir matters: this repo holds the Flutter app beside the backend, and
+# without it Render would look for requirements.txt at the repo root.
+#
+# Deploy either by pointing Render at this file (Blueprints -> New) or by
+# creating the Web Service by hand with the same values — see RENDER.md.
+
+services:
+  - type: web
+    name: sched-api
+    runtime: python
+    rootDir: backend_python
+    plan: free
+
+    buildCommand: pip install -r requirements.txt
+
+    # $PORT is assigned by Render and is NOT 8000. Binding 0.0.0.0 rather
+    # than the 127.0.0.1 default is what makes the service reachable from
+    # outside its container; a server on loopback fails Render's health
+    # check and the deploy hangs until it times out.
+    startCommand: uvicorn api:app --host 0.0.0.0 --port $PORT
+
+    healthCheckPath: /
+
+    envVars:
+      # Without this the app now refuses to boot (db_backend.active_backend).
+      # That is deliberate: it used to fall back to Firestore and fail later,
+      # at the first login, instead of here.
+      - key: DB_BACKEND
+        value: supabase
+
+      # The Supabase session-pooler URI. Marked sync:false so it is NOT
+      # stored in git — Render prompts for it once at deploy time.
+      # Must be the SESSION POOLER host: the direct db.<ref>.supabase.co
+      # host is IPv6-only and unreachable from Render's free tier.
+      - key: SUPABASE_DB_URL
+        sync: false
+
+      # Bootstrap password for POST /init-admin. Generate a real one.
+      - key: ADMIN_BOOTSTRAP_PASSWORD
+        sync: false
+
+      # Free tier gives one instance; keep the pool small so it stays well
+      # under the pooler's client limit.
+      - key: SUPABASE_POOL_SIZE
+        value: "5"
+
+      - key: PYTHON_VERSION
+        value: "3.13.6"

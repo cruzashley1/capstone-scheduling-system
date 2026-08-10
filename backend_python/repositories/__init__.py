@@ -22,7 +22,7 @@ def from_db(db):
     the handle was wrapped in a repository that speaks Firestore no
     matter what DB_BACKEND says.
 
-    The import is deferred because db_backend imports firebase_init,
+    The import is deferred because db_backend imports db_init,
     which this package's document_repo also imports — at module level
     the three would close a cycle.
     """

@@ -4,12 +4,12 @@ Credentials in Supabase — the third implementation of the auth surface.
 `firebase_admin.auth` is the original and `mock_auth.py` is the offline
 stand-in; this is the one DB_BACKEND=supabase selects. All three expose
 the same functions with the same signatures, so api.py's `auth.` calls
-are unchanged and nothing above firebase_init.get_auth() knows which is
+are unchanged and nothing above db_init.get_auth() knows which is
 in use.
 
 Why this file has to exist at all: authentication is the one part of the
 backend that never went through the repository. api.py talks to
-`firebase_init.verify_password` and to the module returned by
+`db_init.verify_password` and to the module returned by
 `get_auth()`, and both of those switched on USE_MOCK_DB — so a Supabase
 deployment would still have been reading mock_data/_auth.json off local
 disk, which exists on a development machine and nowhere else.

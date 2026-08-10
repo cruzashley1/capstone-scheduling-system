@@ -1,51 +1,47 @@
-﻿annotated-doc==0.0.4
-annotated-types==0.7.0
+# Runtime dependencies. Firebase was retired 2026-08; the firebase-admin
+# tree (google-cloud-firestore, grpcio, protobuf, google-auth, cryptography
+# and friends — 22 distributions) came out with it. Nothing here talks to
+# Google any more.
+
+# --- API server ---
+fastapi==0.139.0
+starlette==1.3.1
+uvicorn==0.49.0
+h11==0.16.0
 anyio==4.14.1
-bcrypt==5.0.0
-CacheControl==0.14.4
-certifi==2026.6.17
-cffi==2.0.0
-charset-normalizer==3.4.7
 click==8.4.2
 colorama==0.4.6
-cryptography==49.0.0
-fastapi==0.139.0
-firebase_admin==7.4.0
-google-api-core==2.31.0
-google-auth==2.55.1
-google-cloud-core==2.6.0
-google-cloud-firestore==2.28.0
-google-cloud-storage==3.12.0
-google-crc32c==1.8.0
-google-resumable-media==2.10.0
-googleapis-common-protos==1.75.0
-grpcio==1.81.1
-grpcio-status==1.81.1
-h11==0.16.0
-h2==4.3.0
-hpack==4.2.0
-httpcore==1.0.9
-httpx==0.28.1
-hyperframe==6.1.0
-idna==3.18
-msgpack==1.2.1
-proto-plus==1.28.0
-protobuf==7.35.1
+
+# --- Models / validation ---
+pydantic==2.13.4
+pydantic_core==2.46.4
+annotated-doc==0.0.4
+annotated-types==0.7.0
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+
+# --- Supabase / Postgres ---
+# psycopg-binary ships prebuilt wheels, so Render needs no libpq or
+# compiler in the build image.
 psycopg==3.3.4
 psycopg-binary==3.3.4
 psycopg-pool==3.2.6
-pyasn1==0.6.3
-pyasn1_modules==0.4.2
-pycparser==3.0
-pydantic==2.13.4
-pydantic_core==2.46.4
-PyJWT==2.13.0
+
+# --- Credentials ---
+bcrypt==5.0.0
+
+# --- Config ---
 python-dotenv==1.2.2
-requests==2.34.2
-starlette==1.3.1
-truststore==0.10.4
-typing-inspection==0.4.2
-typing_extensions==4.15.0
 tzdata==2026.3
+
+# --- HTTP client. Used by the dev tools (golden_capture.py,
+#     testing_supabase_api.py), not by the server itself. ---
+requests==2.34.2
+certifi==2026.6.17
+charset-normalizer==3.4.7
+idna==3.18
 urllib3==2.7.0
-uvicorn==0.49.0
+
+# --- Windows-only TLS workaround (tls_fix.py). Pure Python, installs
+#     harmlessly on Linux where configure() is a no-op. ---
+truststore==0.10.4

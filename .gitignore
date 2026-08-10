@@ -1,5 +1,8 @@
 # --- Secrets: never commit these ---
 .env
+# firebase-service-account.json is kept here after the Firebase retirement
+# (2026-08) purely as a guard: the file is gone, but an old copy resurfacing
+# in a working tree must still never be committed.
 **/firebase-service-account.json
 
 # --- Machine-local TLS artifact ---
@@ -8,9 +11,11 @@
 # machine-specific and 384 KB — it does not belong in the repo.
 backend_python/.ca_bundle.pem
 
-# --- Offline development snapshot ---
-# Real employee records and plain-text passwords. Local-only by design;
-# regenerate with `python export_firestore.py`.
+# --- Offline corpus ---
+# Real employee records. Local-only by design, and NOT regenerable: it
+# stopped being a Firestore export long before Firebase was retired, and
+# export_firestore.py is deleted. This directory is the source the Supabase
+# loader reads, so the copy on disk is the only copy — back it up locally.
 backend_python/mock_data/
 
 # --- Golden API responses ---

@@ -1,10 +1,12 @@
 """
 Repository over a Firestore-shaped client.
 
-One implementation covers BOTH current backends — real Firestore and the
-offline `mock_firestore.MockFirestoreClient` — because the mock was
-written to impersonate Firestore's API. Whichever `firebase_init.get_db()`
-returns, the calls below are the same.
+This once covered two backends — real Firestore and the offline
+`mock_firestore.MockFirestoreClient` — because the mock was written to
+impersonate Firestore's API. Firebase is retired, so only the mock is
+left, and `db_init.get_db()` returns it unconditionally. The shape of
+the calls below is unchanged; it is now an impersonation of an API no
+real client here speaks.
 
 This class is intentionally a thin translation and nothing more. It holds
 no logic of its own, so landing it cannot change any response: that is
@@ -14,7 +16,7 @@ golden files prove the refactor was inert.
 
 from contextlib import contextmanager
 
-import firebase_init
+import db_init
 from repositories.base import (COLLECTIONS, CollectionRepo, Repository,
                                Transaction, TransactionCollection)
 
@@ -202,7 +204,7 @@ class DocumentRepository(Repository):
         handed out is 1, which is what the existing counters assume.
         """
         counter_ref = (self._db.collection("counters").document(counter_name))
-        transactional = firebase_init.transactional
+        transactional = db_init.transactional
 
         @transactional
         def _increment(transaction):

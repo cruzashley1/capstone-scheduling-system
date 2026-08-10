@@ -19,8 +19,19 @@ import '../models/station.dart';
 import '../models/station_roster.dart';
 
 class ApiService {
-  // A physical device can't use either default below -- it needs the host
-  // machine's LAN IP, passed in at build time:
+  // The deployed API, passed in whole at build time:
+  //   flutter build apk --release \
+  //     --dart-define=API_BASE_URL=https://sched-api.onrender.com
+  //
+  // This has to be the FULL origin, not a host. API_HOST below cannot
+  // reach Render: it hardcodes "http://" and ":8000", so a Render host
+  // would build http://sched-api.onrender.com:8000 -- wrong scheme and a
+  // port nothing listens on. Render serves HTTPS on 443.
+  static const String _apiBaseUrlOverride =
+      String.fromEnvironment("API_BASE_URL");
+
+  // A physical device on the LAN, talking to a laptop running uvicorn,
+  // needs the host machine's LAN IP -- still http, still :8000:
   //   flutter build apk --release --dart-define=API_HOST=192.168.1.3
   static const String _apiHostOverride = String.fromEnvironment("API_HOST");
 
@@ -28,6 +39,11 @@ class ApiService {
   // Android emulators (AVD) resolve 127.0.0.1 to the emulator itself, not
   // the host -- 10.0.2.2 is the AVD's special alias for host loopback.
   static String get baseUrl {
+    if (_apiBaseUrlOverride.isNotEmpty) {
+      // Trailing slashes would double up against the "$baseUrl/employees"
+      // concatenations below.
+      return _apiBaseUrlOverride.replaceAll(RegExp(r"/+$"), "");
+    }
     if (_apiHostOverride.isNotEmpty) {
       return "http://$_apiHostOverride:8000";
     }
@@ -129,7 +145,7 @@ class ApiService {
   }
 
   // Sends the Add Employee form to Python, which generates the
-  // username/password, creates the Firebase Auth login, and saves
+  // username/password, creates the login credential, and saves
   // the record to Firestore. Returns the created employee (with
   // credentials) on success.
   static Future<Map<String, dynamic>> createEmployee({
@@ -276,7 +292,7 @@ class ApiService {
   }
 
   // Replaces an employee's auto-generated password on first login. The
-  // backend re-verifies the current password before updating Firebase Auth.
+  // backend re-verifies the current password before updating the credential.
   static Future<Map<String, dynamic>> changePassword({
     required String username,
     required String currentPassword,
@@ -387,7 +403,7 @@ class ApiService {
     }
   }
 
-  // Deletes an employee from Firestore (and their Firebase Auth login).
+  // Deletes an employee record (and their login credential).
   static Future<Map<String, dynamic>> deleteEmployee(String id) async {
     try {
       final response = await http

@@ -334,7 +334,7 @@ def test_auth():
     """supabase_auth against auth_accounts.
 
     Credentials never went through the repository — api.py reaches them
-    via firebase_init.get_auth() — so they need their own checks. What
+    via db_init.get_auth() — so they need their own checks. What
     matters here is parity with mock_auth: same exceptions, same
     self-upgrade, and a hash that is never returned.
     """

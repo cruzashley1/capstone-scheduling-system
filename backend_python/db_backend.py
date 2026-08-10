@@ -1,44 +1,53 @@
 """
 The single place that decides which database answers.
 
-`firebase_init.py` already switches between real Firestore and the
-offline mock on USE_MOCK_DB. That switch stays exactly as it is — it is
-what makes development cost zero Firestore reads. This module sits one
-level up and chooses the REPOSITORY, which is the switch Supabase will
-need, because Supabase cannot be swapped in at the Firestore-client level
-(see repositories/base.py).
+    DB_BACKEND=mock         mock_data/*.json, offline, 0 network calls
+    DB_BACKEND=supabase     Supabase Postgres
 
-    DB_BACKEND=firestore    real Firestore
-    DB_BACKEND=mock         mock_data/*.json, 0 reads
-    DB_BACKEND=supabase     Supabase (not implemented yet)
+`firestore` was the third option and is gone with the rest of Firebase.
 
-Unset, it follows USE_MOCK_DB, so every existing script, .env and
-DEV_MODE.md instruction keeps working untouched:
-
-    USE_MOCK_DB=1  ->  mock
-    USE_MOCK_DB=0  ->  firestore
+Unset, this follows USE_MOCK_DB=1 to `mock`, so every existing script and
+DEV_MODE.md instruction keeps working untouched. Unset AND without
+USE_MOCK_DB, it RAISES rather than guessing — see active_backend().
 """
 
 import os
 
 from dotenv import load_dotenv
 
-import firebase_init
+import db_init
 
 load_dotenv()
 
-FIRESTORE = "firestore"
 MOCK = "mock"
 SUPABASE = "supabase"
 
-VALID = (FIRESTORE, MOCK, SUPABASE)
+VALID = (MOCK, SUPABASE)
 
 
 def active_backend():
-    """Which backend is selected, as one of VALID."""
+    """Which backend is selected, as one of VALID.
+
+    The unset-and-not-mock case is a hard error, and that is the whole
+    point of this function on a deployed server. It used to mean
+    `firestore`, so a Render instance that forgot DB_BACKEND would boot
+    perfectly, serve reads, and then fail at the first login when
+    firebase_admin looked for a service account that is not deployed —
+    a silent misconfiguration that surfaces as a user-facing bug hours
+    later. There is no Firestore to fall back to now, so refusing to
+    start is both honest and the earliest possible failure.
+    """
     chosen = os.getenv("DB_BACKEND", "").strip().lower()
+
     if not chosen:
-        return MOCK if firebase_init.MOCK_MODE else FIRESTORE
+        if db_init.MOCK_MODE:
+            return MOCK
+        raise RuntimeError(
+            "DB_BACKEND is not set and USE_MOCK_DB is not on, so there is "
+            "no backend to use. Set DB_BACKEND=supabase in the deployment "
+            f"environment, or DB_BACKEND=mock for offline work. "
+            f"Valid values: {', '.join(VALID)}.")
+
     if chosen not in VALID:
         raise ValueError(
             f"DB_BACKEND={chosen!r} is not one of {', '.join(VALID)}")
@@ -67,26 +76,24 @@ class _SupabaseHandle:
 def get_db_handle():
     """The value api.py's lifespan puts in `db`.
 
-    Firestore and the mock still hand back a real client, because their
-    repository is built from it. Supabase opens its own connection and
-    needs none, so it gets the sentinel above rather than a client it
-    would never call.
+    The mock still hands back a real client, because its repository is
+    built from it. Supabase opens its own connection pool and needs none,
+    so it gets the sentinel above rather than a client it would never
+    call.
     """
     if active_backend() == SUPABASE:
         return _SupabaseHandle()
-    return firebase_init.get_db()
+    return db_init.get_db()
 
 
 def get_repository(db=None):
     """The Repository for the active backend.
 
-    `db` is the Firestore-shaped handle from `firebase_init.get_db()`.
-    It is required for the document backends and ignored by Supabase,
-    which opens its own connection.
+    `db` is the Firestore-shaped handle from `db_init.get_db()`. It is
+    required for the document backend and ignored by Supabase, which
+    opens its own connection.
     """
-    backend = active_backend()
-
-    if backend == SUPABASE:
+    if active_backend() == SUPABASE:
         from repositories.supabase_repo import SupabaseRepository
 
         return SupabaseRepository()
@@ -94,5 +101,5 @@ def get_repository(db=None):
     from repositories import DocumentRepository
 
     if db is None:
-        db = firebase_init.get_db()
+        db = db_init.get_db()
     return DocumentRepository(db)

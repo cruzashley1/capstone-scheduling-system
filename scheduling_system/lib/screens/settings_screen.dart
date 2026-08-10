@@ -1778,7 +1778,7 @@ class _SettingsContentState extends State<SettingsContent> {
 // Re-authentication prompt for enabling Developer mode.
 //
 // The password is checked by the server (POST /verify-password) against
-// the admin's own Firebase Auth credential — it is never compared to
+// the admin's own stored credential — it is never compared to
 // anything held in the app, and no password is stored here.
 // ─────────────────────────────────────────────
 class _PasswordPrompt extends StatefulWidget {

@@ -9,15 +9,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-import firebase_init
+import db_init
 import passwords
-# Resolved through firebase_init so development mode can swap in the offline
-# stand-ins (see USE_MOCK_DB in firebase_init.py).
-auth = firebase_init.get_auth()
+# Resolved through db_init so the backend chooses the credential store:
+# supabase_auth when DB_BACKEND=supabase, the offline stand-in otherwise.
+auth = db_init.get_auth()
 
-# Chooses the repository for the active backend. Firestore and the mock are
-# still reached through `db` below; `repo` is the seam Supabase will arrive
-# on, and collections move onto it one at a time (see repositories/base.py).
+# Chooses the repository for the active backend. The mock is still reached
+# through `db` below; Supabase opens its own pool (see repositories/base.py).
 import db_backend
 
 from models.employee import EmployeeCreateRequest, EmployeeUpdateRequest, _role_to_type
@@ -86,27 +85,29 @@ class _RepositoryProxy:
 # from, and as what testing_*.py assigns to enter without lifespan.
 repo = _RepositoryProxy()
 
-# 2. Fetch the secret key safely
-FIREBASE_WEB_API_KEY = os.getenv("FIREBASE_WEB_API_KEY")
-
-if not FIREBASE_WEB_API_KEY:
-    print("⚠️ WARNING: Firebase Web API Key not found in .env file!")
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db
-    print("Initializing Firebase...")
-    try:
-        # `repo` needs no assignment here — it resolves from `db` on use,
-        # so it cannot go stale or stay unset on the paths that skip
-        # lifespan entirely.
-        db = db_backend.get_db_handle()
-        print(f"Database connected successfully! "
-              f"(backend: {db_backend.active_backend()})")
-    except Exception as e:
-        print(f"CRITICAL: Firebase failed to initialize: {e}")
-    
+    backend = db_backend.active_backend()
+    print(f"Initializing database (backend: {backend})...")
+
+    # Deliberately NOT wrapped in try/except. This used to swallow the
+    # exception and yield anyway, which left `db` as None and every one
+    # of the ~40 guarded endpoints answering 500 — a server that starts
+    # healthy, passes a health check, and serves nothing. On Render that
+    # is the difference between a deploy that fails loudly and one that
+    # goes live broken, so a database that cannot be reached now stops
+    # the process.
+    db = db_backend.get_db_handle()
+    print(f"Database connected successfully! (backend: {backend})")
+
     yield
+
+    if backend == db_backend.SUPABASE:
+        from repositories.supabase_repo import close_pool
+
+        close_pool()
+        print("Supabase connection pool closed.")
 
 # Initialize FastAPI with the lifespan handler
 app = FastAPI(lifespan=lifespan)
@@ -170,14 +171,14 @@ def initialize_admin():
     masked_email = f"{username}@schedulingsystem.local"
     
     try:
-        # 1. Create the user in Firebase Auth
+        # 1. Create the login credential
         user_record = auth.create_user(
             email=masked_email,
             password=password,
             uid=username 
         )
         
-        # 2. Save their role in Firestore
+        # 2. Save their role in the employees collection
         repo.users.upsert(username, {
             "username": username,
             "role": "admin",
@@ -191,16 +192,16 @@ def initialize_admin():
 
 @app.post("/login")
 def login(request: LoginRequest):
-    """Handles login by talking to the Firebase Auth REST API."""
+    """Handles login by checking the credential store for the active backend."""
     if db is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
-    # Verifies against Firebase Auth (or the offline store in mock mode);
-    # the masked-email trick lives inside firebase_init.verify_password.
-    if not firebase_init.verify_password(request.username, request.password):
+    # Verifies against auth_accounts on Supabase, or the offline store
+    # otherwise; db_init.verify_password picks whichever is in use.
+    if not db_init.verify_password(request.username, request.password):
         raise HTTPException(status_code=401, detail="Invalid username or password")
         
-    # If Auth succeeds, fetch the user's role from Firestore
+    # If the credential checks out, fetch the user's role
     try:
         # 1. First, check the 'users' collection (for Admin)
         user_data = repo.users.get(request.username)
@@ -249,7 +250,7 @@ def verify_password(request: LoginRequest):
     one thing that can move duty windows off the server clock. Returns
     401 on a wrong password rather than leaking whether the account
     exists, and never returns the stored password."""
-    if not firebase_init.verify_password(request.username, request.password):
+    if not db_init.verify_password(request.username, request.password):
         raise HTTPException(status_code=401, detail="Password is incorrect.")
     return {"success": True}
 
@@ -257,8 +258,8 @@ def verify_password(request: LoginRequest):
 @app.post("/change-password")
 def change_password(request: ChangePasswordRequest):
     """Lets an employee replace their auto-generated password. Verifies the
-    current password against Firebase Auth first, then updates both the
-    Auth user and the Firestore record (which clears mustChangePassword)."""
+    current password first, then updates both the credential and the
+    employee record (which clears mustChangePassword)."""
     if db is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
@@ -269,15 +270,15 @@ def change_password(request: ChangePasswordRequest):
         raise HTTPException(status_code=400, detail="New password must be different from the current one.")
 
     # Re-verify the current password the same way /login does
-    if not firebase_init.verify_password(request.username, request.currentPassword):
+    if not db_init.verify_password(request.username, request.currentPassword):
         raise HTTPException(status_code=401, detail="Current password is incorrect.")
 
     try:
-        # Update the real login credential in Firebase Auth
+        # Update the real login credential
         auth.update_user(request.username, password=new_password)
 
         # The record keeps only the mask — the new password lives in
-        # Firebase Auth (or the hashed mock store) and nowhere else.
+        # the credential store and nowhere else.
         # Clearing the flag sends the next login straight to the dashboard.
         if repo.employees.get(request.username) is not None:
             repo.employees.update(request.username, {
@@ -345,7 +346,7 @@ def _generate_credentials(full_name: str, seq_number: int):
 @app.post("/employees")
 def create_employee(request: EmployeeCreateRequest):
     """Registers a new employee: generates credentials, creates their
-    Firebase Auth login, and saves the record to Firestore."""
+    login credential, and saves the employee record."""
     if db is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
@@ -366,8 +367,8 @@ def create_employee(request: EmployeeCreateRequest):
             "preferredStations": request.preferredStations,
             "type": _role_to_type(request.role),
             "username": username,
-            # The record never keeps the password itself — only Firebase
-            # Auth (or the hashed mock store) holds a verifiable copy.
+            # The record never keeps the password itself — only the
+            # credential store holds a verifiable copy.
             # The generated password is returned once, below, which is
             # what the "share these login details" dialog displays.
             "password": passwords.MASK,
@@ -469,7 +470,7 @@ def reset_employee_password(employee_id: str):
 
 @app.delete("/employees/{employee_id}")
 def delete_employee(employee_id: str):
-    """Deletes an employee's Firestore record and their Firebase Auth login."""
+    """Deletes an employee's record and their login credential."""
     if db is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
@@ -811,7 +812,7 @@ def _resolve_station_times(posts, post_times):
 @app.post("/stations")
 def create_station(request: StationCreateRequest):
     """Registers a new station with an auto-generated sequential ID
-    (e.g. STA001) and saves it to Firestore.
+    (e.g. STA001) and saves it.
 
     The station is configured per shift: a required number and the named
     posts making it up, for morning / afternoon / night. requiredEmployees
@@ -1665,7 +1666,7 @@ def _write_notifications(notifications):
     """Writes notification docs in bulk.
 
     Publishing a schedule can notify a few hundred guards at once. The
-    chunking this used to do by hand — Firestore refuses a batch over
+    chunking this used to do by hand — Firestore refused a batch over
     500 writes — now lives in the repository, because it is a limit of
     that backend and not of this endpoint.
     """
