@@ -60,10 +60,35 @@ def get_db():
     return firestore.client()
 
 
+def _supabase_selected():
+    """True when DB_BACKEND picks Supabase.
+
+    Read straight from the environment rather than through
+    db_backend.active_backend(), because db_backend imports THIS module
+    at its top level and asking it here at import time would close the
+    circle. The parsing is the same one db_backend does, and
+    db_backend.VALID still rejects a misspelling loudly.
+    """
+    return os.getenv("DB_BACKEND", "").strip().lower() == "supabase"
+
+
 def get_auth():
-    """Returns the auth module to use: firebase_admin.auth normally, or the
-    offline stand-in in mock mode. Both expose create_user / update_user /
-    delete_user with the same signatures."""
+    """Returns the auth module to use: firebase_admin.auth normally, the
+    offline stand-in in mock mode, or supabase_auth when DB_BACKEND says
+    so. All three expose create_user / update_user / delete_user with the
+    same signatures.
+
+    Supabase is checked FIRST and deliberately outranks USE_MOCK_DB.
+    Running Supabase alongside USE_MOCK_DB=1 is the normal configuration
+    — it is what keeps firebase_admin from being imported at all — so
+    letting MOCK_MODE win here would quietly send every login back to
+    the local JSON file this switch exists to leave behind.
+    """
+    if _supabase_selected():
+        import supabase_auth
+
+        return supabase_auth
+
     if MOCK_MODE:
         import mock_auth
 
@@ -85,8 +110,14 @@ def verify_password(username, password):
     """Checks a username/password pair, returning True on success.
 
     Wraps the masked-email sign-in so callers don't repeat it: real mode posts
-    to Identity Toolkit, mock mode checks mock_data/_auth.json locally.
+    to Identity Toolkit, mock mode checks mock_data/_auth.json locally, and
+    Supabase checks the auth_accounts table.
     """
+    if _supabase_selected():
+        import supabase_auth
+
+        return supabase_auth.verify_password(username, password)
+
     if MOCK_MODE:
         import mock_auth
 

@@ -100,8 +100,8 @@ async def lifespan(app: FastAPI):
         # `repo` needs no assignment here — it resolves from `db` on use,
         # so it cannot go stale or stay unset on the paths that skip
         # lifespan entirely.
-        db = firebase_init.get_db()
-        print(f"Firebase connected successfully! "
+        db = db_backend.get_db_handle()
+        print(f"Database connected successfully! "
               f"(backend: {db_backend.active_backend()})")
     except Exception as e:
         print(f"CRITICAL: Firebase failed to initialize: {e}")

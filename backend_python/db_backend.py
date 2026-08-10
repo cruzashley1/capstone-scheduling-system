@@ -45,6 +45,38 @@ def active_backend():
     return chosen
 
 
+class _SupabaseHandle:
+    """What api.py stores in `db` when Supabase is the backend.
+
+    `db` used to be the Firestore client. No runtime module calls a
+    method on it any more — `db.collection(` is 0 across api.py,
+    scheduler.py, rotation.py, leave.py and replacements.py — but it is
+    still passed around and still guards ~40 endpoints with
+    `if db is None: raise 500`, so it has to be something.
+
+    Something, but not a MockFirestoreClient: that would read the whole
+    mock_data corpus into memory to serve nobody, and on Render the
+    directory is not deployed at all. This is the honest object — it
+    names the backend and does nothing else.
+    """
+
+    def __repr__(self):
+        return "<supabase>"
+
+
+def get_db_handle():
+    """The value api.py's lifespan puts in `db`.
+
+    Firestore and the mock still hand back a real client, because their
+    repository is built from it. Supabase opens its own connection and
+    needs none, so it gets the sentinel above rather than a client it
+    would never call.
+    """
+    if active_backend() == SUPABASE:
+        return _SupabaseHandle()
+    return firebase_init.get_db()
+
+
 def get_repository(db=None):
     """The Repository for the active backend.
 

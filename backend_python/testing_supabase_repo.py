@@ -130,19 +130,27 @@ def test_crud(repo):
 
 def test_find_and_order(repo):
     print("\nfind, ordering, absent-vs-null")
+    # Every filter VALUE below is prefixed, not just the ids. Against a
+    # loaded database `find(type="regular")` matches 390 real guards and
+    # `update_where` would REWRITE them — which is exactly what happened
+    # the first time this ran after load_supabase.py, and why the values
+    # are now unmatchable by real data.
+    regular, reliever = f"{PREFIX}_regular", f"{PREFIX}_reliever"
+    station = f"{PREFIX} Somewhere"
+
     ids = [f"{PREFIX}_E3", f"{PREFIX}_E1", f"{PREFIX}_E2"]
     for i, eid in enumerate(ids):
         repo.employees.upsert(eid, {
             "id": eid, "name": f"{PREFIX} {eid[-2:]}",
             "username": eid.lower(), "email": f"{eid}@x.test",
-            "type": "regular" if i else "reliever", "isActive": True,
+            "type": regular if i else reliever, "isActive": True,
             "dateJoined": "2026-01-01", "password": "hash",
-            "assignedStation": None if i == 2 else "Somewhere",
+            "assignedStation": None if i == 2 else station,
         })
 
     # ids are written out of order on purpose (E3, E1, E2) so that
     # "ORDER BY id" below is proving something. E3 is the reliever.
-    found = repo.employees.find(type="regular")
+    found = repo.employees.find(type=regular)
     check("find equality", sorted(e["id"] for e in found),
           [f"{PREFIX}_E1", f"{PREFIX}_E2"])
 
@@ -155,25 +163,26 @@ def test_find_and_order(repo):
 
     # The rule find() inherits from Firestore: a record whose field is
     # NULL is not a match for that field's value.
-    hits = [e["id"] for e in repo.employees.find(assignedStation="Somewhere")]
+    hits = [e["id"] for e in repo.employees.find(assignedStation=station)]
     check("NULL is excluded from equality match", sorted(hits),
           [f"{PREFIX}_E1", f"{PREFIX}_E3"])
 
-    moved = repo.employees.update_where(
-        {"type": "regular"}, {"assignedShift": "Night"})
+    shift = f"{PREFIX}_Night"
+    moved = repo.employees.update_where({"type": regular},
+                                        {"assignedShift": shift})
     check("update_where returns the count", moved, 2)
     check("update_where wrote", sorted(
-        e["id"] for e in repo.employees.find(assignedShift="Night")),
+        e["id"] for e in repo.employees.find(assignedShift=shift)),
         [f"{PREFIX}_E1", f"{PREFIX}_E2"])
 
     repo.employees.upsert_many({
         f"{PREFIX}_E4": {"id": f"{PREFIX}_E4", "name": "four",
                          "username": "four", "email": "4@x.test",
-                         "type": "regular", "dateJoined": "2026-01-01",
+                         "type": regular, "dateJoined": "2026-01-01",
                          "password": "h"},
         f"{PREFIX}_E5": {"id": f"{PREFIX}_E5", "name": "five",
                          "username": "five", "email": "5@x.test",
-                         "type": "reliever", "dateJoined": "2026-01-01",
+                         "type": reliever, "dateJoined": "2026-01-01",
                          "password": "h", "phone": "0917"},
     })
     check("upsert_many with differing column sets",
@@ -211,7 +220,7 @@ def test_days_round_trip(repo):
         {"date": "2026-08-06", "entries": []},
     ]
     schedule = {
-        "id": sid, "stationId": "STA027", "stationName": "Somewhere",
+        "id": sid, "stationId": f"{PREFIX}_STA", "stationName": f"{PREFIX} S",
         "group": 1, "startDate": "2026-08-04", "endDate": "2026-08-06",
         "status": "unpublished", "rotated": False, "rotationCycleId": "202608",
         "uncoveredPosts": 0, "createdAt": "2026-08-04T00:00:00+00:00",
@@ -255,7 +264,7 @@ def test_days_round_trip(repo):
           [len(d["entries"]) for d in after["days"]], [0, 1, 0])
 
     check("find on schedules also attaches days",
-          len(repo.schedules.find(stationId="STA027")[0]["days"]), 3)
+          len(repo.schedules.find(stationId=f"{PREFIX}_STA")[0]["days"]), 3)
 
     repo.schedules.delete(sid)
     check("delete cascades to duty_assignments", repo.schedules.get(sid), None)
@@ -264,34 +273,38 @@ def test_days_round_trip(repo):
 def test_transaction(repo):
     print("\ntransactions")
     a, b = f"{PREFIX}_TXA", f"{PREFIX}_TXB"
+    # Prefixed station names again — delete_where below would otherwise
+    # be one careless value away from clearing real employees.
+    old, new = f"{PREFIX} Old", f"{PREFIX} New"
     base = {"name": "x", "username": "u", "email": "e@x.test",
-            "type": "regular", "dateJoined": "2026-01-01", "password": "h"}
-    repo.employees.upsert(a, dict(base, id=a, assignedStation="Old"))
-    repo.employees.upsert(b, dict(base, id=b, assignedStation="Old"))
+            "type": f"{PREFIX}_regular", "dateJoined": "2026-01-01",
+            "password": "h"}
+    repo.employees.upsert(a, dict(base, id=a, assignedStation=old))
+    repo.employees.upsert(b, dict(base, id=b, assignedStation=old))
 
     with repo.transaction() as tx:
-        tx.employees.update_where({"assignedStation": "Old"},
-                                  {"assignedStation": "New"})
+        tx.employees.update_where({"assignedStation": old},
+                                  {"assignedStation": new})
     check("transaction commits on clean exit",
-          sorted(e["id"] for e in repo.employees.find(assignedStation="New")),
+          sorted(e["id"] for e in repo.employees.find(assignedStation=new)),
           [a, b])
 
     try:
         with repo.transaction() as tx:
-            tx.employees.update_where({"assignedStation": "New"},
-                                      {"assignedStation": "Rolled"})
+            tx.employees.update_where({"assignedStation": new},
+                                      {"assignedStation": f"{PREFIX} Rolled"})
             tx.employees.update(f"{PREFIX}_MISSING", {"name": "boom"})
     except KeyError:
         pass
     check("a raise inside rolls everything back",
-          sorted(e["id"] for e in repo.employees.find(assignedStation="New")),
+          sorted(e["id"] for e in repo.employees.find(assignedStation=new)),
           [a, b])
 
     with repo.transaction() as tx:
-        n = tx.employees.delete_where({"assignedStation": "New"})
+        n = tx.employees.delete_where({"assignedStation": new})
     check("delete_where returns the count", n, 2)
     check("delete_where committed",
-          repo.employees.find(assignedStation="New"), [])
+          repo.employees.find(assignedStation=new), [])
 
     # No 500-write cap here, unlike the document backend.
     with repo.transaction() as tx:
@@ -317,6 +330,74 @@ def test_next_sequence(repo):
     repo.counters.delete(name)
 
 
+def test_auth():
+    """supabase_auth against auth_accounts.
+
+    Credentials never went through the repository — api.py reaches them
+    via firebase_init.get_auth() — so they need their own checks. What
+    matters here is parity with mock_auth: same exceptions, same
+    self-upgrade, and a hash that is never returned.
+    """
+    print("\nauth accounts")
+    import supabase_auth
+
+    uid = f"{PREFIX}_USER"
+    email = f"{uid}@schedulingsystem.local"
+    supabase_auth.create_user(email=email, password="first-pass", uid=uid)
+
+    check("correct password verifies",
+          supabase_auth.verify_password(uid, "first-pass"), True)
+    check("wrong password does not",
+          supabase_auth.verify_password(uid, "nope"), False)
+    check("unknown uid does not",
+          supabase_auth.verify_password(f"{PREFIX}_GHOST", "x"), False)
+    check("get_user returns the email",
+          supabase_auth.get_user(uid).email, email)
+    check("no attribute carries the hash",
+          hasattr(supabase_auth.get_user(uid), "password_hash"), False)
+
+    check_raises("create_user on an existing uid raises",
+                 supabase_auth.UidAlreadyExistsError,
+                 lambda: supabase_auth.create_user(
+                     email=email, password="x", uid=uid))
+
+    supabase_auth.update_user(uid, password="second-pass")
+    check("password change takes effect",
+          (supabase_auth.verify_password(uid, "second-pass"),
+           supabase_auth.verify_password(uid, "first-pass")),
+          (True, False))
+
+    check_raises("update_user on a missing uid raises",
+                 supabase_auth.UserNotFoundError,
+                 lambda: supabase_auth.update_user(f"{PREFIX}_GHOST",
+                                                   password="x"))
+    check_raises("delete_user on a missing uid raises",
+                 supabase_auth.UserNotFoundError,
+                 lambda: supabase_auth.delete_user(f"{PREFIX}_GHOST"))
+
+    # upsert_user must not hash a hash: bcrypt over a bcrypt string is a
+    # valid hash of the wrong thing, and the login fails with nothing in
+    # the logs to say why. This is the trap the loader would fall into.
+    stored = _hash_of(uid)
+    supabase_auth.upsert_user(uid, email, stored)
+    check("re-seeding an existing hash does not re-hash it",
+          supabase_auth.verify_password(uid, "second-pass"), True)
+
+    supabase_auth.delete_user(uid)
+    check_raises("deleted account is gone",
+                 supabase_auth.UserNotFoundError,
+                 lambda: supabase_auth.get_user(uid))
+
+
+def _hash_of(uid):
+    """The stored hash, read directly. Only the test needs this."""
+    from repositories.supabase_repo import get_pool
+    with get_pool().connection() as conn:
+        return conn.execute(
+            "SELECT password_hash FROM auth_accounts WHERE uid = %s",
+            [uid]).fetchone()["password_hash"]
+
+
 def cleanup(repo):
     """Removes every ZZTEST record, whatever happened above."""
     removed = 0
@@ -334,15 +415,56 @@ def cleanup(repo):
         if ids:
             collection.delete_many(ids)
             removed += len(ids)
+
+    with repo._pool.connection() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM auth_accounts WHERE uid LIKE %s",
+                    [PREFIX + "%"])
+        removed += cur.rowcount
     return removed
 
 
+def fingerprint(repo):
+    """A digest of every non-test row in the database.
+
+    The reason this exists: the first run of this suite against a LOADED
+    database rewrote 390 real employees, because `update_where({"type":
+    "regular"}, ...)` matches real guards as happily as test ones. Row
+    counts alone would not have caught it — nothing was created or
+    deleted, 390 rows quietly changed value.
+
+    So the check is over content, not counts, and it runs before and
+    after. Every filter value in this file is ZZTEST-prefixed now; this
+    is what proves it stayed that way.
+    """
+    digests = {}
+    with repo._pool.connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema='public' AND table_type='BASE TABLE' "
+                    "ORDER BY 1")
+        for row in cur.fetchall():
+            table = row["table_name"]
+            key = "schedule_id" if table == "duty_assignments" else (
+                "uid" if table == "auth_accounts" else "id")
+            cur.execute(
+                f'SELECT md5(string_agg(t::text, \'|\' ORDER BY t::text)) AS d,'
+                f' count(*) AS n FROM "{table}" t WHERE {key} NOT LIKE %s',
+                [PREFIX + "%"])
+            result = cur.fetchone()
+            digests[table] = (result["n"], result["d"])
+    return digests
+
+
 def main():
+    global _passed
     print("=" * 66)
     print("SupabaseRepository — behaviour against the real project")
     print("=" * 66)
 
     repo = SupabaseRepository()
+    before = fingerprint(repo)
+    live = sum(n for n, _ in before.values())
+    print(f"\n{live} existing rows will be fingerprinted and re-checked "
+          f"at the end.")
 
     try:
         test_name_conversion()
@@ -351,11 +473,26 @@ def main():
         test_days_round_trip(repo)
         test_transaction(repo)
         test_next_sequence(repo)
+        test_auth()
     except Exception:
         traceback.print_exc()
         _failed.append("uncaught exception")
     finally:
         print(f"\ncleanup: removed {cleanup(repo)} test records")
+
+        print("\nreal data untouched?")
+        after = fingerprint(repo)
+        for table in sorted(set(before) | set(after)):
+            was, now = before.get(table), after.get(table)
+            if was != now:
+                _failed.append(f"{table} was modified")
+                print(f"  FAIL  {table}: {was[0] if was else '-'} rows "
+                      f"-> {now[0] if now else '-'}, content differs")
+        if not any(f.endswith("was modified") for f in _failed):
+            _passed += 1
+            print(f"  ok    all {len(after)} tables byte-identical to "
+                  f"the pre-run fingerprint")
+
         close_pool()
 
     print("\n" + "=" * 66)

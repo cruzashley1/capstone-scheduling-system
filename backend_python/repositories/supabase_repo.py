@@ -35,6 +35,7 @@ break there; Postgres has no such limit, and inventing one would refuse
 transactions that are perfectly safe.
 """
 
+import atexit
 import os
 import threading
 from contextlib import contextmanager
@@ -141,6 +142,12 @@ def get_pool():
                     check=ConnectionPool.check_connection,
                     open=True,
                 )
+                # Without this, a script that finishes its work exits
+                # into psycopg's "couldn't stop thread ... within 5.0
+                # seconds" warnings, because the pool's workers outlive
+                # main(). Harmless, but it makes every clean run look
+                # like it failed.
+                atexit.register(close_pool)
     return _pool
 
 
@@ -282,20 +289,23 @@ def _assignments(schema, table, fields):
     return sql.SQL(", ").join(parts), params
 
 
-def _upsert_sql(schema, table, data, merge):
-    """(statement, params) for one INSERT ... ON CONFLICT.
+def _conflict_clause(schema, table, columns, merge):
+    """The ON CONFLICT action for an upsert over `columns`.
 
     merge=False mirrors Firestore's .set(): the record is REPLACED, so a
-    column absent from `data` goes back to its default rather than
+    column absent from the data goes back to its default rather than
     keeping the value it happened to have. `SET col = DEFAULT` says that
     in one statement, with no read first.
 
     merge=True touches only the given columns.
-    """
-    columns = [schema.column(table, key) for key in data]
-    params = [schema.bind(table, col, value)
-              for col, value in zip(columns, data.values())]
 
+    Shared by upsert() and upsert_many() because they must agree. They
+    did not at first — upsert_many only ever set the given columns, so
+    re-importing a record that had LOST a field left the old value in
+    place. The document backend's upsert_many is `batch.set(doc, data)`
+    with no merge flag, which replaces; one corpus record with no
+    assignedShift is what surfaced the difference.
+    """
     updates = [sql.SQL("{0} = EXCLUDED.{0}").format(_ident(c))
                for c in columns if c != "id"]
     if not merge:
@@ -306,8 +316,17 @@ def _upsert_sql(schema, table, data, merge):
 
     # A record of nothing but its id has nothing to set, and an empty
     # SET is a syntax error. DO NOTHING says the same thing legally.
-    conflict = (sql.SQL("DO UPDATE SET ") + sql.SQL(", ").join(updates)
-                if updates else sql.SQL("DO NOTHING"))
+    if not updates:
+        return sql.SQL("DO NOTHING")
+    return sql.SQL("DO UPDATE SET ") + sql.SQL(", ").join(updates)
+
+
+def _upsert_sql(schema, table, data, merge):
+    """(statement, params) for one INSERT ... ON CONFLICT."""
+    columns = [schema.column(table, key) for key in data]
+    params = [schema.bind(table, col, value)
+              for col, value in zip(columns, data.values())]
+    conflict = _conflict_clause(schema, table, columns, merge)
 
     statement = sql.SQL(
         "INSERT INTO {table} ({cols}) VALUES ({vals}) "
@@ -319,6 +338,22 @@ def _upsert_sql(schema, table, data, merge):
         conflict=conflict,
     )
     return statement, params
+
+
+# Postgres refuses a statement with more than 65535 bound parameters.
+# Chunking lives here rather than at the call sites, which is what the
+# interface promises: "callers should not have to know which, or what the
+# cap is". Left well clear of the limit so a wide table cannot creep up
+# on it — 1895 notifications at 8 columns is one statement either way.
+_MAX_PARAMS = 30000
+
+
+def _in_chunks(rows, columns):
+    """`rows` split so no single statement exceeds the parameter cap."""
+    per_row = max(len(columns), 1)
+    size = max(1, _MAX_PARAMS // per_row)
+    for start in range(0, len(rows), size):
+        yield rows[start:start + size]
 
 
 def _with_id(doc_id, data):
@@ -386,17 +421,19 @@ def _write_days(cursor, schema, schedule_id, days):
 
     template = sql.SQL("({})").format(
         sql.SQL(", ").join([sql.Placeholder()] * len(columns)))
-    params = []
-    for row in rows:
-        params.extend(schema.bind(_DUTY_TABLE, c, row.get(c)) for c in columns)
 
-    cursor.execute(
-        sql.SQL("INSERT INTO {table} ({cols}) VALUES {vals}").format(
-            table=_ident(_DUTY_TABLE),
-            cols=sql.SQL(", ").join(_ident(c) for c in columns),
-            vals=sql.SQL(", ").join([template] * len(rows)),
-        ),
-        params)
+    for batch in _in_chunks(rows, columns):
+        params = []
+        for row in batch:
+            params.extend(
+                schema.bind(_DUTY_TABLE, c, row.get(c)) for c in columns)
+        cursor.execute(
+            sql.SQL("INSERT INTO {table} ({cols}) VALUES {vals}").format(
+                table=_ident(_DUTY_TABLE),
+                cols=sql.SQL(", ").join(_ident(c) for c in columns),
+                vals=sql.SQL(", ").join([template] * len(batch)),
+            ),
+            params)
 
 
 def _attach_days(cursor, schedules):
@@ -489,6 +526,10 @@ class SupabaseCollectionRepo(CollectionRepo):
         # Grouped by column set, because the records need not agree on
         # which fields they carry and one INSERT has one column list.
         # No 500-write cap to work around here.
+        #
+        # REPLACES, like the document backend's batch.set(doc, data):
+        # a record that omits a field resets that column rather than
+        # leaving whatever was there before.
         if not records:
             return
         groups = {}
@@ -499,28 +540,26 @@ class SupabaseCollectionRepo(CollectionRepo):
         with self._pool.connection() as conn, conn.cursor() as cur:
             for keys, batch in groups.items():
                 columns = [self._schema.column(self._table, k) for k in keys]
-                updates = [sql.SQL("{0} = EXCLUDED.{0}").format(_ident(c))
-                           for c in columns if c != "id"]
-                conflict = (sql.SQL("DO UPDATE SET ")
-                            + sql.SQL(", ").join(updates)
-                            if updates else sql.SQL("DO NOTHING"))
+                conflict = _conflict_clause(
+                    self._schema, self._table, columns, merge=False)
                 template = sql.SQL("({})").format(
                     sql.SQL(", ").join([sql.Placeholder()] * len(columns)))
-                params = []
-                for data in batch:
-                    params.extend(
-                        self._schema.bind(self._table, col, data[key])
-                        for col, key in zip(columns, keys))
-                cur.execute(
-                    sql.SQL("INSERT INTO {table} ({cols}) VALUES {vals} "
-                            "ON CONFLICT (id) {conflict}").format(
-                                table=_ident(self._table),
-                                cols=sql.SQL(", ").join(
-                                    _ident(c) for c in columns),
-                                vals=sql.SQL(", ").join(
-                                    [template] * len(batch)),
-                                conflict=conflict),
-                    params)
+                for rows in _in_chunks(batch, columns):
+                    params = []
+                    for data in rows:
+                        params.extend(
+                            self._schema.bind(self._table, col, data[key])
+                            for col, key in zip(columns, keys))
+                    cur.execute(
+                        sql.SQL("INSERT INTO {table} ({cols}) VALUES {vals} "
+                                "ON CONFLICT (id) {conflict}").format(
+                                    table=_ident(self._table),
+                                    cols=sql.SQL(", ").join(
+                                        _ident(c) for c in columns),
+                                    vals=sql.SQL(", ").join(
+                                        [template] * len(rows)),
+                                    conflict=conflict),
+                        params)
 
     def update(self, doc_id, fields):
         with self._pool.connection() as conn, conn.cursor() as cur:
