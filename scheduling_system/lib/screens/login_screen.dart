@@ -18,10 +18,8 @@ const _kTextMuted    = Color(0xFF64748B);
 const _kBorder       = Color(0xFFE2E8F0);
 const _kFieldFill    = Color(0xFFF8FAFC);
 
-// Two raw logo variants: the blue one for white surfaces, the white one
-// for colored/gradient surfaces.
-const String _kLogoAsset      = 'assets/logo/sched_logo.png';
-const String _kLogoWhiteAsset = 'assets/logo/sched_white.png';
+// One raw logo, used on both white and colored/gradient surfaces.
+const String _kLogoAsset = 'assets/logo/kaizen_logo.png';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -215,11 +213,11 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  // Raw logo image, no backing card. Pass onDark: true on colored or
-  // gradient surfaces to use the white variant.
-  Widget _buildLogo({required double size, bool onDark = false}) {
+  // Raw logo image, no backing card. `size` is the height it fits into;
+  // the logo is taller than it is wide, so the width follows from that.
+  Widget _buildLogo({required double size}) {
     return Image.asset(
-      onDark ? _kLogoWhiteAsset : _kLogoAsset,
+      _kLogoAsset,
       width: size,
       height: size,
       fit: BoxFit.contain,
@@ -257,7 +255,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  _buildLogo(size: 150, onDark: true),
+                  _buildLogo(size: 150),
                   const SizedBox(height: 28),
                   const Text(
                     'Sched',
@@ -345,10 +343,12 @@ class _AuthScreenState extends State<AuthScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Raw logo straight above the welcome heading; the form
-              // panel is white, so the blue variant is used.
-              _buildLogo(size: isWide ? 72 : 112),
-              const SizedBox(height: 24),
+              // Raw logo straight above the welcome heading, mobile only —
+              // the admin layout already carries it on the branding panel.
+              if (!isWide) ...[
+                _buildLogo(size: 112),
+                const SizedBox(height: 24),
+              ],
               const Text(
                 'Welcome Back',
                 style: TextStyle(

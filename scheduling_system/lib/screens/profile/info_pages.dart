@@ -495,7 +495,7 @@ class AboutSchedScreen extends StatelessWidget {
                   const SizedBox(height: 16),
                   Center(
                     child: Image.asset(
-                      'assets/logo/sched_logo.png',
+                      'assets/logo/kaizen_logo.png',
                       width: 88,
                       height: 88,
                     ),

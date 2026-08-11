@@ -1274,10 +1274,9 @@ class _SettingsContentState extends State<SettingsContent> {
             child: Column(
               children: [
                 const SizedBox(height: 8),
-                // Raw logo — the panel is white, so the blue variant works
-                // without any backing.
+                // Raw logo, no backing.
                 Image.asset(
-                  'assets/logo/sched_logo.png',
+                  'assets/logo/kaizen_logo.png',
                   width: 110,
                   height: 110,
                   fit: BoxFit.contain,

@@ -71,10 +71,10 @@ flutter:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: false
-  image_path: "assets/logo/sched_logo.png"
+  image_path: "assets/logo/kaizen_logo.png"
   web:
     generate: true
-    image_path: "assets/logo/sched_logo.png" # Replace with your actual file name
+    image_path: "assets/logo/kaizen_logo.png" # Replace with your actual file name
     background_color: "#ffffff"
     theme_color: "#ffffff"
 

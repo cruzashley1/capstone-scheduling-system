@@ -36,10 +36,9 @@ class Sidebar extends StatelessWidget {
             padding: const EdgeInsets.all(24),
             child: Row(
               children: [
-                // Raw logo — the sidebar is dark blue, so the white
-                // variant is used.
+                // Raw logo, no backing card.
                 Image.asset(
-                  'assets/logo/sched_white.png',
+                  'assets/logo/kaizen_logo.png',
                   width: 42,
                   height: 42,
                   fit: BoxFit.contain,
