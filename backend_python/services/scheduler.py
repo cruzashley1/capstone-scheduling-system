@@ -285,6 +285,31 @@ def schedule_relievers(
                 flat_gaps.append((d, shift, covering_emp_id))
     flat_gaps.sort(key=lambda g: g[0])
 
+    # A night regular's day-off leaves a hole nobody in this phase can
+    # fill, because relievers never work nights. That used to be a bare
+    # `continue`: the post went unmanned, the schedule published, and
+    # nothing anywhere said so — the one outcome this engine is not
+    # allowed to produce, since it never refuses a staffing problem and
+    # a note is therefore the ONLY way an admin learns of one.
+    #
+    # Said once for the station rather than once per date. Three night
+    # regulars on a 15-day period generate a run of these, and fifteen
+    # near-identical lines would bury the morning and afternoon warnings
+    # that need individual attention.
+    night_gaps = gaps_by_shift.get(ShiftName.NIGHT) or {}
+    short_dates = sorted(d for d, covering in night_gaps.items() if covering)
+    if short_dates:
+        shown = ", ".join(str(d) for d in short_dates[:5])
+        more = f" (+{len(short_dates) - 5} more)" if len(short_dates) > 5 else ""
+        warnings.append(
+            f"Station {station_id}: the night shift is short on "
+            f"{len(short_dates)} of the period's days — {shown}{more}. "
+            f"Relievers never cover nights, so a night regular's day-off "
+            f"can only be absorbed by another night regular: this station "
+            f"needs more night regulars than its required headcount, not "
+            f"more relievers."
+        )
+
     for d, shift, covering_emp_id in flat_gaps:
         assigned_today.setdefault(d, set())
         # pick the reliever with the fewest worked days so far who isn't
