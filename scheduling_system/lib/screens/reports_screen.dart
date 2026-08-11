@@ -60,9 +60,18 @@ class GuardEntry {
 class AbsenceRow {
   final String dateLabel;   // e.g. "July 16"
   final String post;
-  final String time;
+  final String time;        // the hours the COVER stood
   final String name;        // the absent guard
   final String replacedBy;  // the covering guard
+
+  // The post's own hours, when the cover stood different ones — a
+  // short-notice cover is given an hour to get ready and travel, so the
+  // duty slides (services/prep_window.dart). Null on every ordinary row.
+  //
+  // Printed under the time rather than instead of it, because both are
+  // facts the report has to carry: what the post was rostered for, and
+  // what was actually stood.
+  final String? retimedFrom;
 
   const AbsenceRow({
     required this.dateLabel,
@@ -70,6 +79,7 @@ class AbsenceRow {
     required this.time,
     required this.name,
     required this.replacedBy,
+    this.retimedFrom,
   });
 }
 
@@ -612,11 +622,31 @@ class _ReportsContentState extends State<ReportsContent> {
         AbsenceRow(
           dateLabel: _longDate(r.date!),
           post: r.shift.startsWith('HG') ? 'Head Guard' : 'Shift Guard',
-          time: (_kShiftTimeAndHours[r.shift] ?? ('', 0.0)).$1,
+          time: _absenceTime(r),
           name: r.absentEmployeeName,
           replacedBy: r.replacementEmployeeName,
+          // Stated only when the cover stood different hours from the
+          // post — see _absenceTime.
+          retimedFrom:
+              r.isPrepAdjusted ? r.originalWindow!.range : null,
         ),
     ];
+  }
+
+  // The TIME column of one absence row: the hours the COVER actually
+  // stood, which are not always the post's.
+  //
+  // A cover assigned at short notice is given an hour to get into
+  // uniform and travel, so an 0500H - 1700H post covered at 0900H is
+  // stood 1000H - 1900H (services/prep_window.dart). The record carries
+  // the pair; the shift's base window — all this column used to have —
+  // could not describe that, and could not describe a staggered post
+  // either. It is still the fallback for records written before
+  // replacements carried their own times.
+  String _absenceTime(AppliedReplacement r) {
+    final stood = r.window;
+    if (stood != null) return stood.range;
+    return (_kShiftTimeAndHours[r.shift] ?? ('', 0.0)).$1;
   }
 
   void _refreshData() {
@@ -1659,8 +1689,20 @@ class _ReportsContentState extends State<ReportsContent> {
           ),
           Expanded(
             flex: 3,
-            child: Text(a.time,
-                style: const TextStyle(fontSize: 13, color: _kTextMuted)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(a.time,
+                    style: const TextStyle(fontSize: 13, color: _kTextMuted)),
+                if (a.retimedFrom != null)
+                  Text('post ${a.retimedFrom} · +1 hr to report',
+                      style: const TextStyle(
+                          fontSize: 11,
+                          height: 1.35,
+                          fontStyle: FontStyle.italic,
+                          color: _kAbsence)),
+              ],
+            ),
           ),
           Expanded(
             flex: 5,

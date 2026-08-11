@@ -132,6 +132,22 @@ class TodayDutyCard extends StatelessWidget {
             ),
           ),
 
+          // Only on a duty re-timed to cover somebody at short notice —
+          // otherwise the hours above would look wrong to the one guard
+          // who cannot check them against the post.
+          if (state.retimedNote != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              state.retimedNote!,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                height: 1.35,
+              ),
+            ),
+          ],
+
           // How far through the shift the guard is.
           if (progress != null) ...[
             const SizedBox(height: 14),

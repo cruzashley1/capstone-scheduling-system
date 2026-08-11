@@ -576,7 +576,7 @@ def get_employee_schedule(employee_id: str):
                     if entry.get("employeeId") != employee_id:
                         continue
                     appears = True
-                    shifts.append({
+                    shift = {
                         "date": day.get("date"),
                         "scheduleId": schedule.get("id"),
                         "stationId": schedule.get("stationId"),
@@ -592,7 +592,18 @@ def get_employee_schedule(employee_id: str):
                         "timeOut": entry.get("timeOut"),
                         "isReliever": entry.get("isReliever", False),
                         "coveringFor": entry.get("coveringFor"),
-                    })
+                    }
+                    # A duty re-timed by the preparation window carries
+                    # the post's own hours beside the ones this guard
+                    # stands, and — for an overnight post covered in the
+                    # small hours — which day its time-in falls on.
+                    # Passed through only when the entry has them, so an
+                    # ordinary duty reads exactly as it always did.
+                    for field in ("originalTimeIn", "originalTimeOut",
+                                  "dayOffset", "prepMinutes"):
+                        if entry.get(field) is not None:
+                            shift[field] = entry[field]
+                    shifts.append(shift)
             if appears:
                 appearances.append(schedule)
 

@@ -162,6 +162,27 @@ class LiveDutyState {
     return 'Your schedule will appear here once published.';
   }
 
+  // Why this duty's hours are not the post's, when they aren't.
+  //
+  // A guard picked up to cover an absence at short notice is given an
+  // hour to get into uniform, sort out food and travel, so their duty
+  // slides off the post's own window (see prep_window.dart). Their
+  // dashboard then shows 1000H - 1900H for a post everyone else calls
+  // an 0500H one, and the first thing they will do is wonder whether
+  // something is wrong. This is the sentence that answers it.
+  //
+  // Null on every ordinary duty, which is nearly all of them.
+  String? get retimedNote {
+    final s = shift;
+    if (s == null || !s.isPrepAdjusted) return null;
+    if (status == LiveDutyStatus.onLeave ||
+        status == LiveDutyStatus.absent) {
+      return null;
+    }
+    return 'Covering at short notice — the post itself runs '
+        '${s.originalWindow!.range}';
+  }
+
   // Live countdown under the time window. Recomputed on every tick.
   String? get progressNote {
     // Leave counts down in days, not hours, and has no shift to hang off.

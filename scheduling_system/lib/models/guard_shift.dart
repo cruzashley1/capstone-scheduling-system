@@ -64,6 +64,19 @@ class GuardShift {
   final String? timeInRaw;
   final String? timeOutRaw;
 
+  // Set only on a duty re-timed by the preparation window — a cover
+  // assigned at short notice, given an hour to get ready and travel
+  // (services/prep_window.dart). These are the hours the POST runs,
+  // which is not what this guard stands.
+  final String? originalTimeInRaw;
+  final String? originalTimeOutRaw;
+
+  // How many days after `date` this duty's time-in falls. Always 0 for
+  // a generated post; 1 only when a cover for an overnight post was
+  // assigned in the small hours of the morning, which the bare "HH:MM"
+  // pair has no way of saying on its own.
+  final int dayOffset;
+
   final bool isReliever;
   final String? coveringFor;
 
@@ -75,11 +88,29 @@ class GuardShift {
     required this.shift,
     this.timeInRaw,
     this.timeOutRaw,
+    this.originalTimeInRaw,
+    this.originalTimeOutRaw,
+    this.dayOffset = 0,
     this.isReliever = false,
     this.coveringFor,
   });
 
   bool get isCovering => coveringFor != null;
+
+  /// True when the preparation window moved this duty off the post's own
+  /// hours. The dashboards say so, because "why does my shift start at
+  /// 1000H when the post starts at 0500H" is the first thing a guard
+  /// covering at short notice will ask.
+  bool get isPrepAdjusted => originalWindow != null;
+
+  /// The hours the POST runs, when they differ from the hours this guard
+  /// stands. Null on every ordinary duty.
+  PostTime? get originalWindow {
+    final start = parseHhmm(originalTimeInRaw);
+    final end = parseHhmm(originalTimeOutRaw);
+    if (start == null || end == null) return null;
+    return PostTime(start: start, end: end);
+  }
 
   String get title => '$shift Shift';
 
@@ -109,17 +140,23 @@ class GuardShift {
   // wall clock against these, instead of just matching the date.
 
   int? get _startMinutes => window?.start;
-  int? get _endMinutes => window?.end;
 
-  // Night (2100H - 0600H) and HG Night (1700H - 0500H) run past midnight:
-  // their time-out lands on the day AFTER `date`. A staggered afternoon
-  // post can now cross midnight too (1800H - 0300H), which this already
-  // handles — it compares the times, not the shift name.
+  // True when this duty is still running after its own date is over.
+  // Night (2100H - 0600H) and HG Night (1700H - 0500H) do: their
+  // time-out lands on the day AFTER `date`. A staggered afternoon post
+  // can too (1800H - 0300H), which this handles — it compares the
+  // clock, not the shift name.
+  //
+  // Asked of the instants rather than the "HH:MM" pair so a duty with a
+  // dayOffset answers it correctly: a cover that times in at 0330H the
+  // morning after its duty date reads 0330H - 0700H, which as a bare
+  // pair looks like an ordinary same-day window and is not one.
   bool get crossesMidnight {
-    final s = _startMinutes;
-    final e = _endMinutes;
+    final s = startsAt;
+    final e = endsAt;
     if (s == null || e == null) return false;
-    return e <= s;
+    return DateTime(e.year, e.month, e.day)
+        .isAfter(DateTime(date.year, date.month, date.day));
   }
 
   // Absolute time-in / time-out. Null when the duty has no known window —
@@ -128,15 +165,18 @@ class GuardShift {
     final s = _startMinutes;
     if (s == null) return null;
     return DateTime(date.year, date.month, date.day)
-        .add(Duration(minutes: s));
+        .add(Duration(days: dayOffset, minutes: s));
   }
 
+  // Time-out is measured FORWARD from time-in rather than placed on a
+  // calendar day of its own, which is the same answer as before for
+  // every generated post and the only correct one for a duty carrying a
+  // dayOffset.
   DateTime? get endsAt {
-    final e = _endMinutes;
-    if (_startMinutes == null || e == null) return null;
-    final sameDay =
-        DateTime(date.year, date.month, date.day).add(Duration(minutes: e));
-    return crossesMidnight ? sameDay.add(const Duration(days: 1)) : sameDay;
+    final s = startsAt;
+    final w = window;
+    if (s == null || w == null) return null;
+    return s.add(Duration(minutes: w.lengthMinutes));
   }
 
   Duration? get length {
@@ -173,6 +213,9 @@ class GuardShift {
       shift: json['shift'] ?? '',
       timeInRaw: json['timeIn'],
       timeOutRaw: json['timeOut'],
+      originalTimeInRaw: json['originalTimeIn'],
+      originalTimeOutRaw: json['originalTimeOut'],
+      dayOffset: json['dayOffset'] is int ? json['dayOffset'] as int : 0,
       isReliever: json['isReliever'] ?? false,
       coveringFor: json['coveringFor'],
     );

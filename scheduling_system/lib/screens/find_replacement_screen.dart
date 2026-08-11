@@ -12,11 +12,23 @@
 // screen then shows the closed window instead of a candidate list. The
 // backend refuses the same case with 409, so a screen left open across
 // the deadline can't slip one through either — see CoverWindow.
+//
+// A cover assigned once the post is already running does not inherit the
+// absent guard's hours: the duty slides so the guard has an hour to get
+// ready and travel (see PrepWindow). Those are the hours the admin is
+// actually committing to, so the screen states them before they commit —
+// the backend computes the authoritative pair at the instant of the
+// assignment, and this is what that will be.
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../models/post_time.dart';
 import '../models/replacement.dart';
 import '../services/api_service.dart';
 import '../services/cover_window.dart';
+import '../services/prep_window.dart';
+import '../widgets/ai_review_panel.dart';
 import 'main_layout.dart';
 
 class FindReplacementScreen extends StatefulWidget {
@@ -46,6 +58,20 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
   // flashing a list of candidates.
   DateTime? _windowEndsAt;
 
+  // The post's own hours, for working out what a cover assigned NOW
+  // would actually stand. Starts at the shift's base window and is
+  // replaced by the backend's exact one when /suggest lands — the same
+  // order of trust _windowEndsAt uses, and for the same reason: posts
+  // are staggered per station, so the shift name is never enough.
+  PostTime? _postWindow;
+
+  // The AI's read on the shortlist. Null is the ordinary state, not a
+  // failure — the AI may be switched off, out of quota, or looking at
+  // too few candidates to have an opinion worth the request. The list
+  // below renders identically either way.
+  AiReview? _aiReview;
+  bool _aiLoading = false;
+
   ReplacementRequest get _req => widget.request;
 
   // The duty is over — nobody can be sent to stand a post that has
@@ -55,10 +81,18 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
     return end != null && CoverWindow.hasPassed(end);
   }
 
+  // What a cover assigned at this instant would stand. Recomputed on
+  // every read rather than stored, because it moves with the clock: an
+  // admin who leaves this screen open for twenty minutes has to be shown
+  // the hours they would be committing to now, not twenty minutes ago.
+  PrepAdjustment? get _prep =>
+      PrepWindow.adjust(_req.date, _postWindow);
+
   @override
   void initState() {
     super.initState();
     _windowEndsAt = CoverWindow.endsAt(_req.date, _req.shift);
+    _postWindow = baseShiftWindow(CoverWindow.canonicalShift(_req.shift));
     _loadCandidates();
   }
 
@@ -66,7 +100,22 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
     setState(() {
       _isLoading = true;
       _loadError = null;
+      _aiReview = null;
+      _aiLoading = true;
     });
+
+    // Both requests go out together and the screen waits only on the
+    // ranked list. The AI review is the slower of the two by a wide
+    // margin, and it is the one the admin can act without — so it lands
+    // into a panel above a list that is already usable, rather than
+    // holding that list back.
+    final reviewFuture = ApiService.aiReviewReplacements(
+      date: _req.date,
+      station: _req.station,
+      shift: _req.shift,
+      absentEmployeeId: _req.absentEmployeeId,
+    );
+    unawaited(_awaitReview(reviewFuture));
 
     final result = await ApiService.suggestReplacements(
       date: _req.date,
@@ -89,9 +138,39 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
               endsAtIso: result['coverWindowEndsAt']?.toString(),
             ) ??
             _windowEndsAt;
+        _postWindow = shiftWindow(
+              _req.shift,
+              timeIn: result['coverWindowTimeIn']?.toString(),
+              timeOut: result['coverWindowTimeOut']?.toString(),
+            ) ??
+            _postWindow;
       } else {
         _loadError = result['error']?.toString() ?? 'Failed to load';
       }
+    });
+  }
+
+  // A candidate's display name, or null when that id is not on the
+  // current shortlist. The panel refuses to name anybody this cannot
+  // resolve — the backend already discards a review that recommends
+  // somebody it was not shown, and this is the same guarantee held on
+  // the screen, where the list may have been reloaded since.
+  String? _nameForCandidate(String id) {
+    for (final c in _candidates) {
+      if (c.employee.id == id) return c.employee.name;
+    }
+    return null;
+  }
+
+  // Lands the AI review whenever it arrives, which may be well after the
+  // list. A null answer is the ordinary "nothing to add" and clears the
+  // spinner without putting anything in its place.
+  Future<void> _awaitReview(Future<AiReview?> pending) async {
+    final review = await pending;
+    if (!mounted) return;
+    setState(() {
+      _aiReview = review;
+      _aiLoading = false;
     });
   }
 
@@ -125,6 +204,12 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
       return;
     }
 
+    // Read at the last possible moment, so the hours in the dialog are
+    // the ones the backend is about to compute rather than the ones that
+    // applied when the screen was drawn.
+    final prep = _prep;
+    final retimed = prep != null && prep.adjusted;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -135,7 +220,13 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
         content: Text(
           'Assign ${candidate.employee.name} to cover '
           '${_req.absentName}\'s ${_req.shift} shift at ${_req.station} '
-          'on ${_req.date}?\n\nThe schedule will be updated and '
+          'on ${_req.date}?\n\n'
+          '${retimed ? 'The post runs ${prep.originalRange} and has already '
+              'started, so ${candidate.employee.name} is scheduled '
+              '${prep.range} — ${prep.noticeLabel} to get ready and travel, '
+              'then an hour of extension. They will be told to be at '
+              '${_req.station} by ${prep.reportBy}.\n\n' : ''}'
+          'The schedule will be updated and '
           '${candidate.employee.name} will be notified.'
           '${_req.isApprovalFlow ? '\n\n${_req.absentName}\'s absence request '
               'will be approved.' : ''}',
@@ -192,13 +283,24 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
     _req.record?.replacedById = candidate.employee.id;
     _req.record?.replacedByName = candidate.employee.name;
 
+    // The hours quoted back are the backend's, not the preview's — it
+    // computed them at the instant it committed them, and that is the
+    // pair now on the schedule.
+    final applied = result['replacement'] is Map
+        ? AppliedReplacement.fromJson(
+            Map<String, dynamic>.from(result['replacement'] as Map))
+        : null;
+    final hours = (applied?.isPrepAdjusted ?? false)
+        ? ', ${applied!.window!.range}'
+        : '';
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(_req.isApprovalFlow
             ? 'Absence approved — ${candidate.employee.name} now covers '
-                '${_req.absentName}\'s post.'
+                '${_req.absentName}\'s post$hours.'
             : 'Schedule updated — ${candidate.employee.name} now covers '
-                '${_req.absentName}\'s post.'),
+                '${_req.absentName}\'s post$hours.'),
         backgroundColor: Colors.green,
         behavior: SnackBarBehavior.floating,
       ),
@@ -389,6 +491,10 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildAbsenceContextCard(),
+                        if (!_isWindowClosed && (_prep?.adjusted ?? false)) ...[
+                          const SizedBox(height: 12),
+                          _buildPrepWindowCard(_prep!),
+                        ],
                         const SizedBox(height: 24),
 
                         if (_loadError != null)
@@ -432,6 +538,17 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
                             ),
                           ),
                           const SizedBox(height: 16),
+                          // Above the list, and only when there is a list
+                          // to have an opinion about. On an empty result
+                          // the admin needs the empty state, not a
+                          // recommendation drawn from nothing.
+                          if (_candidates.isNotEmpty)
+                            AiReviewPanel(
+                              review: _aiReview,
+                              isLoading: _aiLoading,
+                              topRankedId: _candidates.first.employee.id,
+                              nameFor: _nameForCandidate,
+                            ),
                           if (_candidates.isEmpty)
                             _buildEmptyState()
                           else
@@ -509,6 +626,62 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
                 fontWeight: FontWeight.w700,
                 color: closed ? const Color(0xFF475569) : Colors.red[600],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // The hours the cover will actually stand, shown BEFORE the admin
+  // picks anybody.
+  //
+  // Without this the screen would quietly do something surprising: the
+  // admin assigns a guard to an 0500H - 1700H post and the schedule
+  // comes back saying 1000H - 1900H. The reason is good — nobody walks
+  // out of their house straight onto a post — but it has to be visible
+  // at the moment of the decision, not discovered afterwards in the
+  // report. Only drawn when the hour actually moves something; a cover
+  // assigned days ahead has nothing to explain.
+  Widget _buildPrepWindowCard(PrepAdjustment prep) {
+    const accent = Color(0xFF0E7490); // teal — informative, not alarming
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFECFEFF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFA5F3FC)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.timer_outlined, color: accent, size: 22),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'This cover will be scheduled ${prep.range}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF155E75),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'The post itself runs ${prep.originalRange}, which has '
+                  'already started. Whoever you assign gets '
+                  '${prep.noticeLabel} to get into uniform, sort out food '
+                  'and travel — they are expected at ${_req.station} by '
+                  '${prep.reportBy} — and their duty is extended an hour '
+                  'at the far end to make up for the late start.',
+                  style: const TextStyle(
+                      fontSize: 13, color: Color(0xFF155E75), height: 1.45),
+                ),
+              ],
             ),
           ),
         ],

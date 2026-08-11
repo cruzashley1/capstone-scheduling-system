@@ -9,6 +9,7 @@
 
 import 'attendance_report.dart';
 import 'employee.dart';
+import 'post_time.dart';
 
 class ReplacementCandidate {
   final Employee employee;
@@ -36,6 +37,61 @@ class ReplacementCandidate {
   }
 }
 
+// The AI's read on the candidates above — POST /replacements/ai-review.
+//
+// ALWAYS OPTIONAL. The backend returns `review: null` whenever it has
+// nothing to say (switched off, out of quota, fewer than two candidates
+// to weigh, or an answer that failed validation) and answers 200 while
+// doing it, because no review is a normal outcome and not an error. The
+// screen this appears on is complete without it, so every field here is
+// decoration on a list that already works.
+//
+// `recommendedId` is guaranteed by the backend to be one of the
+// candidates it was shown — it validates the model's answer against the
+// shortlist and discards the whole response otherwise. The UI can look
+// the id up without defending against a name that does not exist.
+class AiReview {
+  final String recommendedId;
+  final String confidence; // 'strong' | 'moderate' | 'weak'
+  final String rationale; // 1-2 sentences, written for the admin
+  final String? risk; // a real trade-off, or null when the pick is clean
+  final String? runnerUpId;
+  final String? runnerUpTradeoff;
+  final String? model;
+
+  const AiReview({
+    required this.recommendedId,
+    required this.confidence,
+    required this.rationale,
+    this.risk,
+    this.runnerUpId,
+    this.runnerUpTradeoff,
+    this.model,
+  });
+
+  // Whether the AI passed over whoever the rule-based score ranked
+  // first. Asked at render time rather than stored on the model, so the
+  // review can be fetched in parallel with the ranked list instead of
+  // waiting on it — the two requests are independent and the screen is
+  // slow enough already.
+  bool differsFrom(String? topRankedId) =>
+      topRankedId != null &&
+      recommendedId.isNotEmpty &&
+      recommendedId != topRankedId;
+
+  factory AiReview.fromJson(Map<String, dynamic> json) {
+    return AiReview(
+      recommendedId: json['recommendedId']?.toString() ?? '',
+      confidence: json['confidence']?.toString() ?? 'moderate',
+      rationale: json['rationale']?.toString() ?? '',
+      risk: json['risk']?.toString(),
+      runnerUpId: json['runnerUpId']?.toString(),
+      runnerUpTradeoff: json['runnerUpTradeoff']?.toString(),
+      model: json['model']?.toString(),
+    );
+  }
+}
+
 // One admin-applied replacement — the audit record the backend writes
 // when the admin confirms a substitution via POST /replacements/apply.
 // Feeds the Schedule Report's Absence & Substitution Log.
@@ -49,6 +105,21 @@ class AppliedReplacement {
   final String replacementEmployeeId;
   final String replacementEmployeeName;
 
+  // The hours the cover actually stood, "HH:MM". Null on a record
+  // written before replacements carried their own times — the log then
+  // falls back to the shift's base window, as it always did.
+  final String? timeIn;
+  final String? timeOut;
+
+  // The hours the POST runs, set only when the preparation window moved
+  // the duty off them: a cover assigned at short notice gets an hour to
+  // get ready and travel, so an 0500H - 1700H post covered at 0900H is
+  // stood 1000H - 1900H (services/prep_window.dart). The log shows both,
+  // because a report saying an 0500H post ran to 1900H with no
+  // explanation is a report somebody has to come and ask about.
+  final String? originalTimeIn;
+  final String? originalTimeOut;
+
   const AppliedReplacement({
     required this.id,
     required this.date,
@@ -58,7 +129,27 @@ class AppliedReplacement {
     required this.absentEmployeeName,
     required this.replacementEmployeeId,
     required this.replacementEmployeeName,
+    this.timeIn,
+    this.timeOut,
+    this.originalTimeIn,
+    this.originalTimeOut,
   });
+
+  /// True when the cover stood different hours from the post itself.
+  bool get isPrepAdjusted => window != null && originalWindow != null;
+
+  /// The hours the cover stood. Null when the record carries none.
+  PostTime? get window => _windowOf(timeIn, timeOut);
+
+  /// The post's own hours, when the cover's differ from them.
+  PostTime? get originalWindow => _windowOf(originalTimeIn, originalTimeOut);
+
+  static PostTime? _windowOf(String? from, String? to) {
+    final start = parseHhmm(from);
+    final end = parseHhmm(to);
+    if (start == null || end == null) return null;
+    return PostTime(start: start, end: end);
+  }
 
   factory AppliedReplacement.fromJson(Map<String, dynamic> json) {
     return AppliedReplacement(
@@ -70,6 +161,10 @@ class AppliedReplacement {
       absentEmployeeName: json['absentEmployeeName'] ?? '',
       replacementEmployeeId: json['replacementEmployeeId'] ?? '',
       replacementEmployeeName: json['replacementEmployeeName'] ?? '',
+      timeIn: json['timeIn'],
+      timeOut: json['timeOut'],
+      originalTimeIn: json['originalTimeIn'],
+      originalTimeOut: json['originalTimeOut'],
     );
   }
 }

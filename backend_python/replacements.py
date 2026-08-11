@@ -38,10 +38,15 @@ report record is stamped replacedBy*, an audit doc is written to
 `employee_notifications/` (shown in the guard app's Alerts tab).
 
 THE COVER WINDOW closes at the post's time-out — see cover_window().
+
+THE PREPARATION WINDOW re-times the duty the cover inherits, so a guard
+told at 0900H about an 0500H - 1700H post is scheduled 1000H - 1900H
+rather than being four hours late on paper — see prep_window.
 """
 
 from datetime import datetime, timedelta, timezone
 
+import prep_window
 import repositories
 import station_posts
 
@@ -509,14 +514,58 @@ def _shift_slug(shift):
     return "".join(c for c in shift.upper() if c.isalnum()) or "SHIFT"
 
 
-def apply_replacement(db, req):
+def _hours(minutes):
+    """60 -> '1 hour'. The notice is quoted from the constant rather than
+    written out, so changing prep_window.PREP_MINUTES changes what the
+    guard is told as well as what the schedule says."""
+    count = minutes / 60
+    text = f"{count:g}"
+    return f"{text} hour{'' if count == 1 else 's'}"
+
+
+def _cover_message(absent_name, shift, station, date_iso, prep):
+    """What the covering guard is told, in the guard app's Alerts tab.
+
+    The short-notice wording is the whole point of the preparation
+    window: the guard has to know both that the hour is theirs to get
+    ready in and that they are expected to be standing at the station
+    when it runs out. A cover with time to spare is told the plain
+    version, because there is no preparation hour to explain.
+    """
+    opening = (f"{absent_name} is unable to report for the {shift} shift at "
+               f"{station} on {date_iso}. You have been assigned to cover "
+               f"this post")
+
+    if not prep:
+        return opening + " — please review your updated schedule."
+
+    if not prep["adjusted"]:
+        return (f"{opening}, {prep['range']}. Please review your updated "
+                f"schedule.")
+
+    notice = _hours(prep["prepMinutes"])
+    return (f"{opening}. You have {notice} to get ready and travel — be at "
+            f"{station} by {prep['range'].split(' - ')[0]}. Your duty has "
+            f"been moved to {prep['range']} so you are not expected on post "
+            f"before then; the post's own hours were "
+            f"{prep['originalRange']}.")
+
+
+def apply_replacement(db, req, now=None):
     """Rewrites the schedule entry, stamps the report record, writes the
     audit + notification docs. Raises ValueError for a schedule conflict
-    (409) and LookupError when something can't be found (404)."""
+    (409) and LookupError when something can't be found (404).
+
+    `now` is the instant of the assignment — the anchor the preparation
+    window counts its hour from. It defaults to the server clock and is
+    passed in only by the tests, which need to place an assignment at a
+    chosen hour of a chosen day.
+    """
     date_iso = req.date
     station = req.station.strip()
     shift = req.shift
     repo = repositories.from_db(db)
+    now = now or datetime.now(_PHT)
 
     rep = repo.employees.get(req.replacementEmployeeId)
     if rep is None:
@@ -530,8 +579,17 @@ def apply_replacement(db, req):
     # screen left open since yesterday would otherwise still post here.
     window = cover_window(db, date_iso, station, shift, req.absentEmployeeId,
                           schedules=covering)
-    if is_closed(window):
+    if is_closed(window, now):
         raise ValueError(closed_reason(window, station, shift, date_iso))
+
+    # The hours the cover will actually stand, which are the post's own
+    # only when there is still time to prepare for it. Computed here, off
+    # the same window the check above used, so the entry, the audit
+    # record and the guard's notification can never quote three different
+    # sets of times. None when the post has no readable hours anywhere —
+    # then the entry keeps whatever it had, as it did before.
+    prep = prep_window.adjust(date_iso, (window or {}).get("timeIn"),
+                              (window or {}).get("timeOut"), now=now)
 
     # Re-check the no-conflict rule right before writing, in case the
     # suggestion list went stale while the admin was deciding.
@@ -568,6 +626,17 @@ def apply_replacement(db, req):
             match["employeeName"] = rep.get("name", "")
             match["isReliever"] = rep.get("type") == "reliever"
             match["coveringFor"] = req.absentEmployeeId
+            # Short notice re-times the duty. The post's own hours are
+            # kept alongside the new ones rather than overwritten, so
+            # every screen showing this entry — and the absence log —
+            # can say what the post WAS as well as what it now is.
+            if prep and prep["adjusted"]:
+                match["originalTimeIn"] = prep["originalTimeIn"]
+                match["originalTimeOut"] = prep["originalTimeOut"]
+                match["timeIn"] = prep["timeIn"]
+                match["timeOut"] = prep["timeOut"]
+                match["dayOffset"] = prep["dayOffset"]
+                match["prepMinutes"] = prep["prepMinutes"]
             replaced_entry = True
     if not replaced_entry:
         raise LookupError(
@@ -594,6 +663,25 @@ def apply_replacement(db, req):
         "replacementEmployeeName": rep.get("name", ""),
         "appliedAt": applied_at,
     }
+    # The hours the cover actually stood. The Absence & Substitution Log
+    # reads its TIME column from here rather than from the shift name,
+    # which since the preparation window can no longer be trusted to
+    # describe what anybody stood — and could not describe a staggered
+    # post even before it.
+    #
+    # A field with nothing to say is LEFT OUT rather than written as
+    # null: a record from before this rule existed carries neither, and
+    # one written today should not be distinguishable from it by an
+    # explicit "we didn't adjust anything".
+    if prep:
+        record["timeIn"] = prep["timeIn"]
+        record["timeOut"] = prep["timeOut"]
+        if prep["adjusted"]:
+            record["originalTimeIn"] = prep["originalTimeIn"]
+            record["originalTimeOut"] = prep["originalTimeOut"]
+            record["prepAdjusted"] = True
+            record["prepMinutes"] = prep["prepMinutes"]
+            record["reportAt"] = prep["startsAt"]
     repo.replacements.upsert(record["id"], record)
 
     # Stamp the attendance report record(s) so the admin screens show
@@ -625,10 +713,7 @@ def apply_replacement(db, req):
         "employeeId": rep["id"],
         "type": "urgent",
         "title": "Sudden Duty Call",
-        "message": f"{absent_name} is unable to report for the {shift} "
-                   f"shift at {station} on {date_iso}. You have been "
-                   "assigned to cover this post — please review your "
-                   "updated schedule.",
+        "message": _cover_message(absent_name, shift, station, date_iso, prep),
         "date": date_iso,
         "createdAt": applied_at,
         "isRead": False,
@@ -671,9 +756,15 @@ def apply_replacement(db, req):
                     "employeeId": req.absentEmployeeId,
                     "type": "schedule",
                     "title": "Absence Request Approved",
+                    # Naming the cover's hours matters when they differ
+                    # from the post's: the absent guard should not come
+                    # back to a report saying their post ran until 1900H
+                    # and have to work out why.
                     "message": f"Your absence for {date_iso} was approved — "
                                f"{rep.get('name', 'a colleague')} will cover "
-                               f"your {shift} post at {station}.",
+                               f"your {shift} post at {station}"
+                               + (f", {prep['range']}."
+                                  if prep and prep["adjusted"] else "."),
                     "date": date_iso,
                     "createdAt": applied_at,
                     "isRead": False,

@@ -55,6 +55,40 @@ from repositories.base import (COLLECTIONS, CollectionRepo, Repository,
 # would ADD a field that /login and the counters have never had.
 _ID_OMITTED = frozenset({"users", "counters"})
 
+# Columns added AFTER the response shapes were frozen by the golden
+# files, mapped to the value that means "this document never had the
+# field". A row still sitting at that value is returned WITHOUT the key,
+# rather than with an explicit null, and the difference is the whole
+# point: Postgres gives every row every column, so a plain ALTER TABLE
+# would add `"originalTimeIn": null` to all 3,400 duty entries and to
+# every replacement record written before the rule existed.
+#
+# That is not a cosmetic difference. Those responses are the contract
+# api_service.dart reads, the golden files are how a change to them gets
+# noticed, and a field nobody set is a field the document does not have.
+# The document backend has always answered that way; this keeps the two
+# saying the same thing.
+#
+# Keyed by the camelCase name, because that is the form the document
+# carries by the time this runs.
+_OMIT_WHEN_UNSET = {
+    "duty_assignments": {
+        "originalTimeIn": None,
+        "originalTimeOut": None,
+        "dayOffset": 0,
+        "prepMinutes": None,
+    },
+    "replacements": {
+        "timeIn": None,
+        "timeOut": None,
+        "originalTimeIn": None,
+        "originalTimeOut": None,
+        "prepAdjusted": False,
+        "prepMinutes": None,
+        "reportAt": None,
+    },
+}
+
 # The table that holds what schedules.days used to hold inline. Not in
 # COLLECTIONS on purpose — it is storage, not vocabulary, and no caller
 # outside this module may reach it.
@@ -64,6 +98,13 @@ _DUTY_TABLE = "duty_assignments"
 # entry. They are stripped on the way out; the remaining columns are
 # exactly the 11 keys an entry has always had.
 _DUTY_INTERNAL = ("schedule_id", "day_index", "day_date", "position")
+
+# What a duty row gets for a column it does not carry. Only NOT NULL
+# columns need an answer: the rest take None, which is what their absence
+# means. day_offset is on the list because one re-timed entry puts the
+# column into the INSERT for every entry of that schedule, and the other
+# 3,400 of them do not carry it.
+_DUTY_DEFAULTS = {"day_offset": 0}
 
 
 def to_camel(name):
@@ -254,12 +295,24 @@ def _ident(name):
     return sql.Identifier(name)
 
 
+def _drop_unset(table, document):
+    """`document` without the late-addition fields it never set.
+
+    In place, and returns it. See _OMIT_WHEN_UNSET.
+    """
+    for key, unset in _OMIT_WHEN_UNSET.get(table, {}).items():
+        value = document.get(key)
+        if value is None or value == unset:
+            document.pop(key, None)
+    return document
+
+
 def _row_out(table, row):
     """One Postgres row as the dict the API has always returned."""
     out = {to_camel(key): value for key, value in row.items()}
     if table in _ID_OMITTED:
         out.pop("id", None)
-    return out
+    return _drop_unset(table, out)
 
 
 def _where(schema, table, filters):
@@ -412,7 +465,18 @@ def _write_days(cursor, schema, schedule_id, days):
     if not rows:
         return
 
-    columns = list(rows[0])
+    # The UNION of every row's keys, not the first row's. Entries within
+    # one schedule no longer all carry the same fields: applying a
+    # replacement re-times a SINGLE entry and stamps the preparation
+    # window onto it alone (see prep_window.py). Reading the column list
+    # off rows[0] dropped those fields on the floor whenever the adjusted
+    # entry was not the first of the fortnight, which is almost always.
+    columns = []
+    for row in rows:
+        for column in row:
+            if column not in columns:
+                columns.append(column)
+
     unknown = [c for c in columns if c not in schema.columns[_DUTY_TABLE]]
     if unknown:
         raise KeyError(
@@ -426,7 +490,9 @@ def _write_days(cursor, schema, schedule_id, days):
         params = []
         for row in batch:
             params.extend(
-                schema.bind(_DUTY_TABLE, c, row.get(c)) for c in columns)
+                schema.bind(_DUTY_TABLE, c,
+                            row.get(c, _DUTY_DEFAULTS.get(c)))
+                for c in columns)
         cursor.execute(
             sql.SQL("INSERT INTO {table} ({cols}) VALUES {vals}").format(
                 table=_ident(_DUTY_TABLE),
@@ -455,8 +521,9 @@ def _attach_days(cursor, schedules):
 
     grouped = {}
     for row in cursor.fetchall():
-        entry = {to_camel(k): v for k, v in row.items()
-                 if k not in _DUTY_INTERNAL}
+        entry = _drop_unset(_DUTY_TABLE, {to_camel(k): v for k, v in
+                                          row.items()
+                                          if k not in _DUTY_INTERNAL})
         grouped.setdefault(row["schedule_id"], {}).setdefault(
             row["day_index"], []).append(entry)
 

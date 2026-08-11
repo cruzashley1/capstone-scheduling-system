@@ -1287,6 +1287,14 @@ class ApiService {
               .toList(),
           "coverWindowEndsAt":
               window is Map ? window["endsAt"]?.toString() : null,
+          // The post's OWN hours, off the absent guard's schedule entry,
+          // so the screen can show what a cover assigned now would
+          // actually stand (see PrepWindow). Null on an older backend,
+          // where the shift's base hours stand in.
+          "coverWindowTimeIn":
+              window is Map ? window["timeIn"]?.toString() : null,
+          "coverWindowTimeOut":
+              window is Map ? window["timeOut"]?.toString() : null,
         };
       } else {
         return {
@@ -1296,6 +1304,47 @@ class ApiService {
       }
     } catch (e) {
       return {"success": false, "error": e.toString()};
+    }
+  }
+
+  // The AI's read on the candidates suggestReplacements() returned.
+  //
+  // NEVER THROWS AND NEVER REPORTS FAILURE. A missing review is not an
+  // error the admin needs to see: the ranked list is already on their
+  // screen and is the whole feature working as it did before any of this
+  // existed. Every failure — offline, timeout, quota, a 500 — comes back
+  // as a null review, and the panel simply does not appear.
+  //
+  // POST, matching the backend: /replacements/suggest is one of the
+  // recorded golden responses, so the AI answer is deliberately kept off
+  // it and out of the shape that gets compared.
+  static Future<AiReview?> aiReviewReplacements({
+    required String date,
+    required String station,
+    required String shift,
+    required String absentEmployeeId,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse("$baseUrl/replacements/ai-review"),
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({
+              "date": date,
+              "station": station,
+              "shift": shift,
+              "absentEmployeeId": absentEmployeeId,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body);
+      final review = data["review"];
+      if (review is! Map) return null;
+      return AiReview.fromJson(Map<String, dynamic>.from(review));
+    } catch (_) {
+      return null;
     }
   }
 
