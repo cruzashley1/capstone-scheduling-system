@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../models/attendance_report.dart';
@@ -5,6 +7,7 @@ import '../models/employee.dart';
 import '../models/schedule.dart';
 import '../models/station.dart';
 import '../services/api_service.dart';
+import '../services/duty_clock.dart';
 import '../services/duty_service.dart';
 import '../services/server_clock.dart';
 import '../widgets/dashboard_analytics.dart';
@@ -139,8 +142,10 @@ class _DashboardContentState extends State<DashboardContent> {
         .toList();
     if (published.isEmpty) return 0;
 
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    // Server clock, like every other "today" on this screen — the header
+    // chip, the analytics panel and this count must agree on which day it
+    // is, and only the server's answer is the one the API will act on.
+    final today = DutyClock.dateOnly(ServerClock.now());
 
     Schedule schedule = published.firstWhere(
       (s) => !today.isBefore(s.startDate) && !today.isAfter(s.endDate),
@@ -178,14 +183,6 @@ class _DashboardContentState extends State<DashboardContent> {
     }).toList();
   }
 
-  String get _todayLabel {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
-    ];
-    final now = DateTime.now();
-    return '${months[now.month - 1]} ${now.day}, ${now.year}';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -256,26 +253,7 @@ class _DashboardContentState extends State<DashboardContent> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1034A6).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.calendar_today, size: 16, color: const Color(0xFF1034A6)),
-                          const SizedBox(width: 8),
-                          Text(
-                            _todayLabel,
-                            style: TextStyle(
-                              color: const Color(0xFF1034A6),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    const _TodayClockChip(),
                     const SizedBox(width: 16),
                     CircleAvatar(
                       radius: 20,
@@ -942,6 +920,100 @@ class _HoverStatCardState extends State<_HoverStatCard> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// The date-and-time chip in the dashboard header.
+//
+// A widget of its own, with its own ticker, so the second hand repaints a
+// chip rather than the whole dashboard — the analytics panel below it is
+// expensive to rebuild and has no business doing so once a second.
+//
+// The clock is ServerClock's, not DateTime.now(). The admin looking at
+// this is the person deciding whether a head guard is inside their filing
+// window or whether a cover can still reach a post, and those are settled
+// against the server; a header showing this machine's clock instead would
+// disagree with them by however far the two have drifted. It also means
+// the Developer -> "Use device time" switch moves this clock too, within
+// a second of being flipped, which is the point of that switch.
+class _TodayClockChip extends StatefulWidget {
+  const _TodayClockChip();
+
+  @override
+  State<_TodayClockChip> createState() => _TodayClockChipState();
+}
+
+class _TodayClockChipState extends State<_TodayClockChip> {
+  static const List<String> _months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+
+  Timer? _ticker;
+  DateTime _now = ServerClock.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _now = ServerClock.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  String get _dateLabel =>
+      '${_months[_now.month - 1]} ${_now.day}, ${_now.year}';
+
+  @override
+  Widget build(BuildContext context) {
+    const accent = Color(0xFF1034A6);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.calendar_today, size: 16, color: accent),
+          const SizedBox(width: 8),
+          Text(
+            _dateLabel,
+            style: const TextStyle(
+              color: accent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          // Separator, so the date and the time read as two facts rather
+          // than one long string.
+          Container(
+            width: 1,
+            height: 14,
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            color: accent.withOpacity(0.25),
+          ),
+          const Icon(Icons.access_time_rounded, size: 16, color: accent),
+          const SizedBox(width: 6),
+          // Tabular figures, so the digits don't jitter sideways as the
+          // seconds tick over.
+          Text(
+            DutyClock.clock12(_now),
+            style: const TextStyle(
+              color: accent,
+              fontWeight: FontWeight.w600,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
       ),
     );
   }
