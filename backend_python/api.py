@@ -45,6 +45,7 @@ import station_pools
 import station_posts
 import replacements
 import ai_review
+import server_clock
 import leave
 
 # 1. Load the environment variables from .env
@@ -145,7 +146,7 @@ def get_server_time():
     schedules and shift windows (0500H, 1700H, ...) are expressed in. The
     app stores the offset between this and its own clock and applies it
     from then on, so it needs one call, not one per check."""
-    now = datetime.now()
+    now = server_clock.now()
     return {
         "success": True,
         "now": now.isoformat(timespec="milliseconds"),
@@ -649,7 +650,7 @@ def get_station_overview(employee_id: str, date: Optional[str] = None):
         raise HTTPException(status_code=404, detail="Employee not found")
 
     if date is None:
-        date_iso = datetime.now().date().isoformat()
+        date_iso = server_clock.today().isoformat()
     else:
         try:
             date_iso = datetime.strptime(date, "%Y-%m-%d").date().isoformat()
@@ -2484,7 +2485,7 @@ def _assert_inside_duty_window(head_guard_id, report_date, shift_title):
     if end <= start:  # HG Night runs past midnight
         end += timedelta(days=1)
 
-    now = datetime.now()
+    now = server_clock.now()
     if start - HG_DUTY_WINDOW_GRACE <= now <= end + HG_DUTY_WINDOW_GRACE:
         return
 
@@ -3198,7 +3199,7 @@ def submit_cover_offer(request: CoverOfferCreateRequest):
     except ValueError:
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
 
-    if offer_day < datetime.now().date():
+    if offer_day < server_clock.today():
         raise HTTPException(
             status_code=400,
             detail="You can only offer to cover today or an upcoming rest day.")
@@ -3277,7 +3278,7 @@ def get_cover_offers(date: Optional[str] = None, status: Optional[str] = None):
     if db is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
-    date_iso = date or datetime.now().date().isoformat()
+    date_iso = date or server_clock.today().isoformat()
     try:
         datetime.strptime(date_iso, "%Y-%m-%d")
     except ValueError:
@@ -3380,7 +3381,7 @@ def _special_request_window(employee):
     """The bounds the guard app's date picker needs: the earliest and
     latest selectable day, plus the days inside that window it must grey
     out (already scheduled for the employee's group)."""
-    today = datetime.now().date()
+    today = server_clock.today()
     min_date = today + timedelta(days=1)               # strictly future
     max_date = today + timedelta(days=SPECIAL_REQUEST_HORIZON_DAYS)
     scheduled = _scheduled_dates_for_group(_employee_home_group(employee))
@@ -3453,7 +3454,7 @@ def submit_special_request(request: SpecialRequestCreateRequest):
         "assignedStation": request.station.strip(),
     }
 
-    today = datetime.now().date()
+    today = server_clock.today()
     min_iso = (today + timedelta(days=1)).isoformat()
     max_iso = (today + timedelta(days=SPECIAL_REQUEST_HORIZON_DAYS)).isoformat()
     for d in dates:

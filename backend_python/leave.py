@@ -38,6 +38,7 @@ import calendar
 from datetime import date, datetime, timedelta
 
 import repositories
+import server_clock
 import station_pools
 
 COLLECTION = "leave_requests"
@@ -288,7 +289,7 @@ def earliest_start(db, employee, today=None):
     Walks forward through the scheduled days rather than jumping to the
     end of them, so a gap between two generated periods is offered
     instead of being skipped."""
-    today = today or date.today()
+    today = today or server_clock.today()
     scheduled = scheduled_dates_for_group(db, home_group(db, employee))
     candidate = today + timedelta(days=MIN_LEAD_DAYS)
     limit = today + timedelta(days=MAX_HORIZON_DAYS)
@@ -380,7 +381,7 @@ def eligibility(db, employee, today=None):
     types anything: whether they may file at all, the earliest day they
     could start, and which days inside the horizon are already rostered
     and so unselectable."""
-    today = today or date.today()
+    today = today or server_clock.today()
     employee_id = employee.get("id", "")
     leaves = employee_leaves(db, employee_id)
     quota = quota_state(leaves, today.year)
@@ -435,7 +436,7 @@ def validate_employee_request(db, employee, leave_type, start, end, today=None):
     on the first failure, ordered so the message names the thing they can
     actually act on — being out of quota is worth saying before quibbling
     about which days are already rostered."""
-    today = today or date.today()
+    today = today or server_clock.today()
     employee_id = employee.get("id", "")
     leave_type = normalise_type(leave_type)
 
@@ -511,7 +512,7 @@ def admin_blockers(db, employee, leave_type, start, end, today=None,
     Deliberately does NOT include the lead time (the admin is recording
     something already agreed) or the schedule conflict (handled as
     replacements, not as a refusal)."""
-    today = today or date.today()
+    today = today or server_clock.today()
     leaves = employee_leaves(db, employee.get("id", ""))
     blockers = []
 
@@ -594,7 +595,7 @@ def new_record(*, request_id, employee, leave_type, start, end, title, body,
 def phase_of(record, today=None):
     """Where an approved leave stands relative to today — what the
     'On Leave' badge and the report's status column read from."""
-    today = (today or date.today()).isoformat()
+    today = (today or server_clock.today()).isoformat()
     status = record.get("status")
     if status != "approved":
         return status or "pending"
@@ -609,7 +610,7 @@ def active_leaves(db, on_date=None):
     """{employeeId: leave} for every approved leave covering `on_date` —
     what the employee list and Employee Details read to show On Leave
     without loading each employee's history."""
-    iso = (on_date or date.today()).isoformat()
+    iso = (on_date or server_clock.today()).isoformat()
     out = {}
     for rec in repositories.from_db(db).leave_requests.list():
         if rec.get("status") != "approved":

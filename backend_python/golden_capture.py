@@ -30,18 +30,30 @@ RE-BASELINED 2026-08-10 against DB_BACKEND=supabase. Two consequences:
   (employees, special-assignments, special-assignments-cycle,
   stations-pools). Supabase is the baseline now; mock is the one that
   differs. Point compare at the Supabase server.
-* These files are DATE-SENSITIVE and rot. Leave windows, active leaves
-  and duty status all move with the clock, so a comparison run weeks
-  later reports differences that are the calendar's doing and not the
-  code's. When that happens, the way to tell them apart is to run the
-  two backends side by side on the same minute and diff those against
-  each other — the same-day comparison is the one that isolates a
-  backend change, not the comparison against a file recorded in the
-  past.
+* These files USED TO be date-sensitive and rot. Leave windows, the
+  special-request windows, the station overviews and cover-offers all
+  answer relative to "today", so a comparison run the day after a
+  capture reported eleven failures that were the calendar's doing and
+  not the code's — and a net that fails every morning for reasons
+  nobody can act on stops being read. Fixed by freezing the clock
+  rather than by masking those fields, because masking a station
+  overview would blank all 46 of its values and leave the file
+  asserting nothing.
 
-The server must already be running, in whichever mode you want to record:
+RE-BASELINED 2026-08-11, frozen, after each remaining difference was
+accounted for: three were real data movement with identical response
+shapes (schedules generated since, one report read, one password
+changed) and one was the coverWindow field added deliberately in
+6182fb9.
 
-    uvicorn api:app --reload --port 8000
+THE CLOCK MUST BE FROZEN, at the same instant, for capture and for every
+comparison after it:
+
+    SCHED_FREEZE_NOW=2026-08-10T09:00:00 uvicorn api:app --port 8000
+
+Forget it and eleven endpoints fail for no reason — so compare detects a
+running clock from /server-time and says so before printing a single
+diff, rather than leaving somebody to work it out from the wreckage.
 
 Set GOLDEN_BASE_URL to point somewhere else (default http://127.0.0.1:8000).
 """
@@ -53,6 +65,8 @@ import os
 import sys
 
 import requests
+
+import server_clock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(HERE, "mock_data")
@@ -343,6 +357,43 @@ def serialise(payload):
     return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)
 
 
+def clock_is_running(results):
+    """True when the server under test is on the real clock.
+
+    Detected rather than configured, because the server may not be this
+    process — GOLDEN_BASE_URL can point anywhere, and a local env var
+    would say nothing about a remote one. /server-time returns the
+    server's own clock, so if two calls a moment apart disagree it is
+    ticking; frozen, it returns the same instant every time and lands in
+    no volatile path at all.
+    """
+    entry = results.get("server-time")
+    return bool(entry and entry[1])
+
+
+def warn_if_unfrozen(results):
+    """The single most likely reason a comparison fails for no reason.
+
+    Ten of these endpoints answer relative to "today". On the real clock
+    they are correct and different every morning, so a comparison run the
+    day after a capture reports eleven failures that are the calendar's
+    doing — and somebody spends an afternoon looking for a bug that was
+    never there. Better to say so up front than to be diffed against.
+    """
+    if not clock_is_running(results):
+        return
+    print(f"\n{'!' * 70}")
+    print("The server clock is RUNNING, and these files were recorded "
+          "against a frozen one.")
+    print("Expect failures on every date-relative endpoint — the leave and "
+          "special-request windows, the station overviews, cover-offers and "
+          "server-time — none of which mean the contract moved.")
+    print(f"\nRestart the server with the same instant the files were "
+          f"captured at:\n    {server_clock.ENV_VAR}=2026-08-10T09:00:00 "
+          f"uvicorn api:app --port 8000")
+    print(f"{'!' * 70}\n")
+
+
 def collect():
     """Calls every request twice and returns {slug: (text, volatile_paths)}."""
     subjects = derive_subjects()
@@ -375,6 +426,7 @@ def _golden_path(slug):
 
 def cmd_capture():
     results, _ = collect()
+    warn_if_unfrozen(results)
     os.makedirs(GOLDEN_DIR, exist_ok=True)
 
     errors, volatile_report = [], []
@@ -413,6 +465,7 @@ def cmd_compare():
         return 2
 
     results, _ = collect()
+    warn_if_unfrozen(results)
     changed, missing, added = [], [], []
 
     for slug, (text, _volatile, _path) in sorted(results.items()):
