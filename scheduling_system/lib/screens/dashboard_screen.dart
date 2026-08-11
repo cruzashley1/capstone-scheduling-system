@@ -414,10 +414,12 @@ class _DashboardContentState extends State<DashboardContent> {
 
                   const SizedBox(height: 24),
 
-                  // Analytics band. Purely additive — it reads the
-                  // stations and schedules already fetched above, so it
-                  // costs no extra request, and every card and the
-                  // station strip below are untouched.
+                  // Analytics band: Post Coverage beside Attendance.
+                  // Purely additive — it reads the stations and
+                  // schedules already fetched above, so it costs no
+                  // extra request, and every card and the station strip
+                  // below are untouched. onOpenSchedules is still handed
+                  // over for the parked Schedule Health panel.
                   DashboardAnalytics(
                     stations: _stations,
                     schedules: _schedules,

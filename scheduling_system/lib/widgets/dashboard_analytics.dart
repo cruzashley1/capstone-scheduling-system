@@ -1,6 +1,6 @@
 // widgets/dashboard_analytics.dart
 //
-// The dashboard's analytics band — three panels reading the data the
+// The dashboard's analytics band — two panels reading the data the
 // summary cards can't say anything about.
 //
 //   Post Coverage    of every post the 25 active stations need manned
@@ -11,21 +11,29 @@
 //   Attendance       present vs absent across the head guard reports
 //                    actually filed, by reporting day.
 //
-//   Schedule Health  what the generator had to bend, aggregated across
-//                    every run, grouped by the section the fix lives in.
-//
-// All three compute from lists the dashboard already fetches, so none
+// Both compute from lists the dashboard already fetches, so neither
 // costs an extra request.
 //
+// A third panel, Schedule Health, is PARKED rather than deleted: it
+// reported too many overlapping numbers to read at a glance and is
+// being rethought. Its arithmetic, its panel, its rows and its
+// breakdown dialog all still live further down this file and are still
+// covered by dashboard_analytics_test.dart — nothing on the dashboard
+// builds them today.
+//
 // LAYOUT
+//
+// The two panels share one row, Coverage on 3/5 and Attendance on 2/5:
+// Coverage carries a hero, a stat rail AND three bars, Attendance one
+// hero over one chart. Below 1000px of content width they stack, each
+// full width.
 //
 // Each panel splits into a READING half and a PLOT half. The reading
 // half is the one figure the panel is about plus a rail of supporting
 // numbers, right-aligned on tabular figures so they scan as a column.
-// The plot half is the chart. On a wide dashboard Coverage sets them
-// side by side across one full-width card, divided by a hairline; below
-// ~720px inside the card they stack and the rail lies down into a strip.
-// Attendance and Schedule Health are half-width, so they always stack.
+// The plot half is the chart. Coverage sets them side by side while its
+// own card is wider than ~720px, divided by a hairline; below that they
+// stack and the rail lies down into a strip. Attendance always stacks.
 //
 // WHY COVERAGE IS MEASURED AGAINST ALL ACTIVE STATIONS
 //
@@ -94,6 +102,11 @@ const Color _kGood = Color(0xFF059669);
 const Color _kWarn = Color(0xFFCA8A04);
 const Color _kAbsent = Color(0xFFDC2626);
 const Color _kInfo = Color(0xFF0369A1);
+
+/// Content width at or below which the two panels give up the row and
+/// stack, each full width. Matches the dashboard's summary-card
+/// breakpoint, so the whole page reflows at one place.
+const double _kStackAnalyticsBelow = 1000;
 
 const List<String> _kMonths = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -580,7 +593,6 @@ class DashboardAnalytics extends StatelessWidget {
       today: today,
     );
     final attendance = computeAttendanceTrend(attendanceReports);
-    final health = computeScheduleHealth(schedules);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -593,11 +605,6 @@ class DashboardAnalytics extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        // Coverage leads and takes the full width — it carries the most
-        // information and the one number the band is about.
-        _CoveragePanel(coverage: coverage, isLoading: isLoading),
-        const SizedBox(height: 20),
-
         LayoutBuilder(
           builder: (context, constraints) {
             final attendancePanel = _AttendancePanel(
@@ -605,28 +612,45 @@ class DashboardAnalytics extends StatelessWidget {
               isLoading: isLoading,
               onOpenReports: onOpenReports,
             );
-            final healthPanel = _HealthPanel(
-              health: health,
-              isLoading: isLoading,
-              onOpenSchedules: onOpenSchedules,
-            );
 
-            if (constraints.maxWidth <= 1000) {
+            // Coverage is handed the width it will get rather than
+            // measuring it itself: matching the two card heights needs an
+            // IntrinsicHeight, and an IntrinsicHeight cannot measure
+            // through a LayoutBuilder — it throws rather than laying out.
+            if (constraints.maxWidth <= _kStackAnalyticsBelow) {
               return Column(
                 children: [
-                  attendancePanel,
+                  _CoveragePanel(
+                    coverage: coverage,
+                    isLoading: isLoading,
+                    cardWidth: constraints.maxWidth,
+                  ),
                   const SizedBox(height: 20),
-                  healthPanel,
+                  attendancePanel,
                 ],
               );
             }
+
+            // Coverage takes the larger share: it carries a hero, a stat
+            // rail AND three bars, and only keeps them side by side above
+            // its own split width. Attendance is one hero over one chart,
+            // so it reads fine in the smaller half.
+            const gap = 20.0;
+            final coverageWidth = (constraints.maxWidth - gap) * 3 / 5;
             return IntrinsicHeight(
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(child: attendancePanel),
-                  const SizedBox(width: 20),
-                  Expanded(child: healthPanel),
+                  Expanded(
+                    flex: 3,
+                    child: _CoveragePanel(
+                      coverage: coverage,
+                      isLoading: isLoading,
+                      cardWidth: coverageWidth,
+                    ),
+                  ),
+                  const SizedBox(width: gap),
+                  Expanded(flex: 2, child: attendancePanel),
                 ],
               ),
             );
@@ -1104,11 +1128,25 @@ class _CoveragePanel extends StatelessWidget {
   final CoverageBreakdown coverage;
   final bool isLoading;
 
-  /// Below this the reading half and the plot half stack instead of
-  /// sitting side by side.
+  /// How wide this card will be. Passed in rather than measured with a
+  /// LayoutBuilder: the band matches the two card heights with an
+  /// IntrinsicHeight, which cannot measure through a LayoutBuilder.
+  final double cardWidth;
+
+  /// Below this much room INSIDE the card, the reading half and the plot
+  /// half stack instead of sitting side by side.
   static const double _splitAt = 720;
 
-  const _CoveragePanel({required this.coverage, required this.isLoading});
+  /// _Panel's own horizontal padding, which the child never sees.
+  static const double _cardPadding = 48;
+
+  const _CoveragePanel({
+    required this.coverage,
+    required this.isLoading,
+    required this.cardWidth,
+  });
+
+  bool get _splitHalves => cardWidth - _cardPadding >= _splitAt;
 
   List<_Stat> get _stats => [
         _Stat(
@@ -1150,74 +1188,68 @@ class _CoveragePanel extends StatelessWidget {
                     'configure one in Station Management to see coverage.',
                   ),
                 )
-              : LayoutBuilder(
-                  builder: (context, constraints) {
-                    final hero = _Hero(
-                      value: _pct(coverage.rate),
-                      caption: '${_comma(coverage.manned)} of '
-                          '${_comma(coverage.totalDemand)} posts manned today',
-                    );
+              : _buildBody(),
+    );
+  }
 
-                    final plot = Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        for (final shift in coverage.shifts) ...[
-                          _CoverageBar(shift: shift),
-                          if (shift != coverage.shifts.last)
-                            const SizedBox(height: 16),
-                        ],
-                        const SizedBox(height: 18),
-                        const _Legend([
-                          _LegendItem(_kManned, 'Manned'),
-                          _LegendItem(
-                              _kUnfilled, 'Unfilled in a published schedule'),
-                          _LegendItem(_kUnscheduled, 'No schedule published'),
-                        ]),
-                      ],
-                    );
+  Widget _buildBody() {
+    final hero = _Hero(
+      value: _pct(coverage.rate),
+      caption: '${_comma(coverage.manned)} of '
+          '${_comma(coverage.totalDemand)} posts manned today',
+    );
 
-                    if (constraints.maxWidth < _splitAt) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          hero,
-                          _StatStrip(_stats),
-                          const SizedBox(height: 24),
-                          plot,
-                        ],
-                      );
-                    }
+    final plot = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final shift in coverage.shifts) ...[
+          _CoverageBar(shift: shift),
+          if (shift != coverage.shifts.last) const SizedBox(height: 16),
+        ],
+        const SizedBox(height: 18),
+        const _Legend([
+          _LegendItem(_kManned, 'Manned'),
+          _LegendItem(_kUnfilled, 'Unfilled in a published schedule'),
+          _LegendItem(_kUnscheduled, 'No schedule published'),
+        ]),
+      ],
+    );
 
-                    // stretch, not start: the hairline between the two
-                    // halves has no height of its own, so it only draws
-                    // if the row hands it one.
-                    return IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          SizedBox(
-                            width: 250,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                hero,
-                                const SizedBox(height: 20),
-                                _StatRail(_stats),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 28),
-                          const SizedBox(
-                            width: 1,
-                            child: ColoredBox(color: _kLine),
-                          ),
-                          const SizedBox(width: 28),
-                          Expanded(child: plot),
-                        ],
-                      ),
-                    );
-                  },
-                ),
+    if (!_splitHalves) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          hero,
+          _StatStrip(_stats),
+          const SizedBox(height: 24),
+          plot,
+        ],
+      );
+    }
+
+    // stretch, not start: the hairline between the two halves has no
+    // height of its own, so it only draws if the row hands it one.
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 250,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                hero,
+                const SizedBox(height: 20),
+                _StatRail(_stats),
+              ],
+            ),
+          ),
+          const SizedBox(width: 28),
+          const SizedBox(width: 1, child: ColoredBox(color: _kLine)),
+          const SizedBox(width: 28),
+          Expanded(child: plot),
+        ],
+      ),
     );
   }
 }
@@ -1526,9 +1558,15 @@ class _AttendanceColumn extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------
-// Schedule health panel
+// Schedule health panel — PARKED, not currently on the dashboard
 // ---------------------------------------------------------------------
+//
+// The panel is off the band while the analytics it reports are being
+// rethought (see the note at the top of this file). Everything below is
+// left whole and still under test, so putting it back is a matter of
+// building _HealthPanel again inside DashboardAnalytics.build.
 
+// ignore: unused_element
 class _HealthPanel extends StatelessWidget {
   final ScheduleHealth health;
   final bool isLoading;
@@ -1537,6 +1575,7 @@ class _HealthPanel extends StatelessWidget {
   const _HealthPanel({
     required this.health,
     required this.isLoading,
+    // ignore: unused_element_parameter
     this.onOpenSchedules,
   });
 

@@ -645,8 +645,8 @@ void main() {
       addTearDown(tester.view.reset);
     }
 
-    testWidgets('wide, with the coverage panel split into its two halves',
-        (tester) async {
+    testWidgets('wide, the two panels share one row and coverage splits '
+        'into its two halves', (tester) async {
       useScreen(tester, const Size(1400, 2400));
 
       await tester.pumpWidget(harness(1400));
@@ -654,51 +654,98 @@ void main() {
       expect(find.text('Operations Analytics'), findsOneWidget);
       expect(find.text('Post Coverage — Today'), findsOneWidget);
       expect(find.text('Attendance'), findsOneWidget);
-      expect(find.text('Schedule Health'), findsOneWidget);
       expect(find.text('Aug 10, 2026'), findsOneWidget);
+
+      // Side by side, coverage on the larger share.
+      final coverage = tester.getRect(find.text('Post Coverage — Today'));
+      final attendance = tester.getRect(find.text('Attendance'));
+      expect(coverage.left, lessThan(attendance.left));
+      expect((coverage.top - attendance.top).abs(), lessThan(1));
+
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('narrow, with everything stacked', (tester) async {
+    testWidgets('narrow, with the two panels stacked', (tester) async {
       useScreen(tester, const Size(720, 3000));
 
       await tester.pumpWidget(harness(720));
 
-      expect(find.text('Schedule Health'), findsOneWidget);
+      final coverage = tester.getRect(find.text('Post Coverage — Today'));
+      final attendance = tester.getRect(find.text('Attendance'));
+      expect(coverage.top, lessThan(attendance.top));
+      expect((coverage.left - attendance.left).abs(), lessThan(1));
+
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('tapping a section opens the notes behind that bar',
+    // Schedule Health is parked, not deleted — the band must not build
+    // it, and everything behind it must still work for whenever it comes
+    // back. See the note above _HealthPanel.
+    testWidgets('the parked Schedule Health panel is not on the band',
         (tester) async {
       useScreen(tester, const Size(1400, 2400));
 
       await tester.pumpWidget(harness(1400));
 
-      // The bar says "1". It does not say WHICH day off went uncovered.
-      expect(find.text('Reliever Cover'), findsOneWidget);
-      expect(
-        find.textContaining('No reliever was free'),
-        findsNothing,
+      expect(find.text('Schedule Health'), findsNothing);
+      expect(find.text('Reliever Cover'), findsNothing);
+      expect(find.text('Breakdown'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the parked breakdown still opens on one category, and a '
+        'severity toggle hides that severity', (tester) async {
+      useScreen(tester, const Size(1400, 2400));
+
+      final health = computeScheduleHealth(schedules);
+
+      // Opened the way a bar used to open it: filtered to one category.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showHealthBreakdown(
+                  context,
+                  health,
+                  category: NoteCategory.cover,
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
       );
 
-      await tester.tap(find.text('Reliever Cover'));
+      await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('No reliever was free'), findsOneWidget);
       expect(find.textContaining('Assign another reliever'), findsOneWidget);
-      // Opened from a bar, the breakdown arrives filtered to it — so the
-      // other category's note is not in the list yet.
+      // Arrived filtered, so the other category's note is not in the list.
       expect(find.textContaining('On approved leave'), findsNothing);
       expect(find.text('Showing 1 of 2 notes'), findsOneWidget);
     });
 
-    testWidgets('the breakdown opens whole from the panel button, and a '
-        'severity toggle hides that severity', (tester) async {
+    testWidgets('the parked breakdown still opens whole', (tester) async {
       useScreen(tester, const Size(1400, 2400));
 
-      await tester.pumpWidget(harness(1400));
+      final health = computeScheduleHealth(schedules);
 
-      await tester.tap(find.text('Breakdown'));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showHealthBreakdown(context, health),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('No reliever was free'), findsOneWidget);
@@ -737,9 +784,6 @@ void main() {
 
       expect(find.textContaining('No station has a per-shift'), findsOneWidget);
       expect(find.textContaining('No head guard has filed'), findsOneWidget);
-      expect(find.textContaining('Nothing to report'), findsOneWidget);
-      // Nothing to open, so nothing pretends to be openable.
-      expect(find.text('Breakdown'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   });
