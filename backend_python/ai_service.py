@@ -98,12 +98,20 @@ TEMPERATURE = 0.2
 #
 # Quality was indistinguishable at 0 and 512 there — both picked the
 # rested, low-cover-load reliever over the higher-scoring volunteer, for
-# the right stated reason. So this is NOT settled evidence that thinking
-# earns its latency; it is one easy case where three candidates made the
-# trade-off obvious. The budget stays because the real screen will hand
-# over a dozen candidates with genuinely conflicting signals, which is
-# where reasoning should start to matter. Worth re-measuring against
-# real shortlists once Phase 2 is feeding this.
+# the right stated reason.
+#
+# Re-measured against a real 12-candidate shortlist and the picture
+# changed: budget=0 took 5.0s, up from 1.3s on three candidates. Most of
+# the time is the payload, not the thinking, so capping the budget buys
+# far less latency than the small-case numbers suggested. A clean A/B at
+# 12 candidates was not possible — the free tier's 20-requests-per-day
+# cap ran out mid-experiment — so 512 STAYS PROVISIONAL. It is not
+# costing much and it has not been shown to be needed either.
+#
+# What was demonstrated at 12 candidates: given a rule-based #1 carrying
+# six recent covers against equally-scored guards carrying none, the
+# model departed from the ranking and said fairness was why. That is the
+# behaviour this whole layer exists for, and it held on flash-lite.
 THINKING_BUDGET = 512
 
 _SYSTEM_INSTRUCTION = """\
