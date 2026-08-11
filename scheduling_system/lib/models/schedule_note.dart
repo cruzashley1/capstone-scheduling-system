@@ -210,6 +210,29 @@ class ScheduleNote {
   }
 }
 
+/// The notes carried by a schedule payload, however that payload spells
+/// them.
+///
+/// `scheduleNotes` is the current form. `rotationNotes` is the flat list
+/// of one-liners the backend still writes alongside it, and is all a
+/// schedule generated before the split has — those are rebuilt as plain
+/// warnings so an older run still shows what it reported, just without
+/// the grouping.
+///
+/// Shared by ApiService (the generate response) and Schedule.fromJson
+/// (a stored schedule), so both read a run the same way.
+List<ScheduleNote> parseScheduleNotes(Map<String, dynamic> data) {
+  final structured = data['scheduleNotes'] as List?;
+  if (structured != null && structured.isNotEmpty) {
+    return structured
+        .map((n) => ScheduleNote.fromJson(Map<String, dynamic>.from(n)))
+        .toList();
+  }
+  return ((data['rotationNotes'] as List?) ?? const [])
+      .map((n) => ScheduleNote.fromLegacyText(n.toString()))
+      .toList();
+}
+
 /// The notes of one category, ready to render as a section.
 class NoteSection {
   final NoteCategory category;

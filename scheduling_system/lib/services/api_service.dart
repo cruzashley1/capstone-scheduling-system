@@ -718,24 +718,11 @@ class ApiService {
 
   // --- Schedules ---
 
-  // What the generator had to bend, as structured notes.
-  //
-  // `scheduleNotes` is the current form. `rotationNotes` is the flat list
-  // of one-liners the backend still writes alongside it, and is all a
-  // schedule generated before the split has — those are rebuilt as plain
-  // warnings so an older run still shows what it reported, just without
-  // the grouping.
-  static List<ScheduleNote> _parseNotes(Map<String, dynamic> data) {
-    final structured = data['scheduleNotes'] as List?;
-    if (structured != null && structured.isNotEmpty) {
-      return structured
-          .map((n) => ScheduleNote.fromJson(Map<String, dynamic>.from(n)))
-          .toList();
-    }
-    return ((data['rotationNotes'] as List?) ?? const [])
-        .map((n) => ScheduleNote.fromLegacyText(n.toString()))
-        .toList();
-  }
+  // What the generator had to bend, as structured notes. The reading
+  // lives in schedule_note.dart so a stored schedule and a generate
+  // response are parsed by the same code.
+  static List<ScheduleNote> _parseNotes(Map<String, dynamic> data) =>
+      parseScheduleNotes(data);
 
   // Asks Python to generate the bi-weekly (15-day) schedule for every
   // station in the group. The backend saves them as unpublished and

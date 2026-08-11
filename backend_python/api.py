@@ -190,6 +190,27 @@ def initialize_admin():
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to create admin: {str(e)}")
 
+def _onboarding_pending(record, field):
+    """Whether an onboarding step is still outstanding for this employee.
+
+    Absent and null both mean "never set", and both have to answer True:
+    the employee is still on their auto-generated password, or has not
+    confirmed their stations yet.
+
+    `record.get(field, True)` is NOT enough, and that is the whole reason
+    this function exists. It defaults only when the key is ABSENT. A
+    document store lets a record simply lack a field, but a column
+    cannot, so since the Supabase migration these columns exist on every
+    row and hold NULL for the employees who never had the field — 537 of
+    573 for mustChangePassword. `.get` then returned None rather than
+    True, and the app reads that as false (`data[...] ?? false` in
+    api_service.dart), silently skipping the step for precisely the
+    people who still needed it.
+    """
+    value = record.get(field)
+    return True if value is None else bool(value)
+
+
 @app.post("/login")
 def login(request: LoginRequest):
     """Handles login by checking the credential store for the active backend."""
@@ -219,14 +240,16 @@ def login(request: LoginRequest):
                 "message": "Login successful",
                 "role": emp_data.get("type", "regular"), # Employees use the 'type' key
                 # Employees must replace their auto-generated password before
-                # entering the app. Older records without the flag default to
-                # True because they are still on their generated password.
-                "mustChangePassword": emp_data.get("mustChangePassword", True),
+                # entering the app. Records that never set the flag default
+                # to True because they are still on their generated password.
+                "mustChangePassword": _onboarding_pending(
+                    emp_data, "mustChangePassword"),
                 # After the password change, employees confirm their preferred
-                # stations once. Older records without the flag default to True
-                # so every existing employee is prompted to confirm the
+                # stations once. Records that never set the flag default to
+                # True so every existing employee is prompted to confirm the
                 # preferences already stored on their record.
-                "mustSelectStations": emp_data.get("mustSelectStations", True),
+                "mustSelectStations": _onboarding_pending(
+                    emp_data, "mustSelectStations"),
                 # Sent so the onboarding picker can open pre-selected with the
                 # preferences already on the record.
                 "preferredStations": emp_data.get("preferredStations", []),

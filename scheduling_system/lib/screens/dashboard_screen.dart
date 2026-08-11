@@ -6,6 +6,8 @@ import '../models/schedule.dart';
 import '../models/station.dart';
 import '../services/api_service.dart';
 import '../services/duty_service.dart';
+import '../services/server_clock.dart';
+import '../widgets/dashboard_analytics.dart';
 import '../widgets/station_icon.dart';
 import 'main_layout.dart';
 
@@ -408,6 +410,24 @@ class _DashboardContentState extends State<DashboardContent> {
                         ],
                       );
                     },
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Analytics band. Purely additive — it reads the
+                  // stations and schedules already fetched above, so it
+                  // costs no extra request, and every card and the
+                  // station strip below are untouched.
+                  DashboardAnalytics(
+                    stations: _stations,
+                    schedules: _schedules,
+                    attendanceReports: _attendanceReports,
+                    isLoading: _isLoading,
+                    today: ServerClock.now(),
+                    onOpenSchedules: () =>
+                        widget.onNavigate(ScreenType.scheduleManagement),
+                    onOpenReports: () =>
+                        widget.onNavigate(ScreenType.submittedReports),
                   ),
 
                   const SizedBox(height: 32),

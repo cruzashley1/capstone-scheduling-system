@@ -17,6 +17,9 @@ backend_python/.ca_bundle.pem
 # export_firestore.py is deleted. This directory is the source the Supabase
 # loader reads, so the copy on disk is the only copy — back it up locally.
 backend_python/mock_data/
+# Dated local backups of the above (mock_data_backup_YYYYMMDD_HHMMSS/).
+# Same real records, so the same rule applies.
+backend_python/mock_data_backup_*/
 
 # --- Golden API responses ---
 # Recorded responses used to prove the Supabase migration did not change

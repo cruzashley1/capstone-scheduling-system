@@ -1,5 +1,6 @@
 // models/schedule.dart
 import 'post_time.dart';
+import 'schedule_note.dart';
 
 enum ScheduleStatus { unpublished, published }
 
@@ -127,6 +128,12 @@ class Schedule {
   final ScheduleStatus status;
   final List<ScheduleDay> days;
 
+  // What the generator had to bend to produce this roster. Carried on the
+  // schedule itself so any screen holding one can report on it — the Auto
+  // Scheduler parses the same field off its own generate response, and
+  // the dashboard's Schedule Health panel aggregates these across runs.
+  final List<ScheduleNote> notes;
+
   Schedule({
     required this.id,
     required this.stationId,
@@ -136,6 +143,7 @@ class Schedule {
     required this.createdAt,
     required this.status,
     required this.days,
+    this.notes = const <ScheduleNote>[],
   });
 
   int get totalDays => days.length;
@@ -162,6 +170,7 @@ class Schedule {
       days: (json['days'] as List? ?? [])
           .map((d) => ScheduleDay.fromJson(Map<String, dynamic>.from(d)))
           .toList(),
+      notes: parseScheduleNotes(json),
     );
   }
 
@@ -174,6 +183,7 @@ class Schedule {
     DateTime? createdAt,
     ScheduleStatus? status,
     List<ScheduleDay>? days,
+    List<ScheduleNote>? notes,
   }) {
     return Schedule(
       id: id ?? this.id,
@@ -184,6 +194,7 @@ class Schedule {
       createdAt: createdAt ?? this.createdAt,
       status: status ?? this.status,
       days: days ?? this.days,
+      notes: notes ?? this.notes,
     );
   }
 }
