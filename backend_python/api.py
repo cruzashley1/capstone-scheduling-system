@@ -35,7 +35,7 @@ from models.special_request import (SpecialRequestCreateRequest,
                                     SpecialRequestDecisionRequest)
 from models.leave import (AdminLeaveCreateRequest, LeaveCancelRequest,
                           LeaveDecisionRequest, LeaveRequestCreateRequest)
-from models.replacement import ReplacementApplyRequest
+from models.replacement import AiReviewRequest, ReplacementApplyRequest
 from models.cover_offer import CoverOfferCreateRequest
 from models.special_assignment import (SpecialAssignmentSaveRequest,
                                        validate_shift)
@@ -44,6 +44,7 @@ import rotation
 import station_pools
 import station_posts
 import replacements
+import ai_review
 import leave
 
 # 1. Load the environment variables from .env
@@ -2695,6 +2696,60 @@ def suggest_replacements(date: str, station: str, shift: str,
                             detail=f"Failed to suggest replacements: {str(e)}")
 
 
+@app.post("/replacements/ai-review")
+def ai_review_replacements(request: AiReviewRequest):
+    """Gemini's read on the candidates GET /replacements/suggest returned.
+
+    A SEPARATE endpoint, and POST rather than GET, for two reasons that
+    both matter more than the extra round trip:
+
+      * /replacements/suggest is one of the 58 golden responses. A
+        non-deterministic field in it would mean the contract could never
+        be checked again, and that safety net is worth more than the
+        convenience of one response.
+
+      * The screen must not wait on this. The rule-based list renders the
+        instant /suggest answers; the review arrives when it arrives, and
+        if it never arrives the screen is exactly what it was before any
+        of this existed.
+
+    `review` is null whenever there is nothing to say — AI switched off,
+    quota gone, fewer than two candidates to choose between, or an answer
+    that failed validation. `source` says which of those it was, so the
+    app can distinguish "the AI has nothing to add" from "the AI was
+    never asked". 200 either way: no review is a normal outcome here, not
+    an error.
+    """
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    try:
+        datetime.strptime(request.date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+
+    try:
+        station = request.station.strip()
+        schedules = repo.schedules.list()
+        candidates = replacements.suggest(
+            db, request.date, station, request.shift,
+            request.absentEmployeeId, schedules=schedules)
+        window = replacements.cover_window(
+            db, request.date, station, request.shift,
+            request.absentEmployeeId, schedules=schedules)
+        review, source = ai_review.review_for(
+            db, request.date, station, request.shift,
+            request.absentEmployeeId, candidates, window=window)
+        return {"success": True, "review": review, "source": source}
+    except Exception as e:
+        # Belt and braces. ai_review is built not to raise, so reaching
+        # here means something outside it did — and even then the answer
+        # is "no review", because the screen this serves is fully usable
+        # without one.
+        print(f"api: ai-review failed ({type(e).__name__}: {e})")
+        return {"success": True, "review": None, "source": "unavailable"}
+
+
 @app.post("/replacements/apply")
 def apply_replacement(request: ReplacementApplyRequest):
     """Commits the admin's chosen replacement: rewrites the schedule
@@ -2710,6 +2765,14 @@ def apply_replacement(request: ReplacementApplyRequest):
 
     try:
         record = replacements.apply_replacement(db, request)
+        # Stamp any AI review of this absence with who was actually
+        # chosen. Agreement between the two is the only honest measure of
+        # whether the review is worth showing, and this is the one moment
+        # the answer exists. Never raises — losing a metric must not cost
+        # the admin their assignment.
+        ai_review.record_decision(
+            db, request.date, request.station.strip(), request.shift,
+            request.absentEmployeeId, request.replacementEmployeeId)
         return {"success": True, "replacement": record}
     except ValueError as e:      # conflict, or the cover window has shut
         raise HTTPException(status_code=409, detail=str(e))

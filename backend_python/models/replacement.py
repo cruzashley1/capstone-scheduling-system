@@ -1,8 +1,23 @@
 # models/replacement.py
-# Request body for POST /replacements/apply — the admin picked one of
-# the suggested candidates and is committing the schedule change.
+# Request bodies for the replacement endpoints: reviewing the suggested
+# candidates, and committing the one the admin picked.
 from typing import Optional
 from pydantic import BaseModel
+
+
+class AiReviewRequest(BaseModel):
+    """POST /replacements/ai-review — the same four values that identify
+    the absence to /replacements/suggest.
+
+    A body rather than query parameters, because the method is what keeps
+    this endpoint out of the golden capture: golden_capture.py records GET
+    responses, and a GET here would be swept in and pin a model's wording
+    as a contract.
+    """
+    date: str                    # ISO date of the absence, YYYY-MM-DD
+    station: str                 # station name (as stored on schedules)
+    shift: str                   # 'Morning' | 'Afternoon' | 'Night' | 'HG Day' | 'HG Night'
+    absentEmployeeId: str
 
 
 class ReplacementApplyRequest(BaseModel):

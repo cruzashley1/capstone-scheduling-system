@@ -46,6 +46,10 @@ COLLECTIONS = (
     "replacements",
     "users",
     "counters",
+    # Cache, audit trail and evaluation record for the AI replacement
+    # review — schema/003_ai_suggestions.sql, which must be applied
+    # before this name is added or Supabase refuses to start.
+    "ai_suggestions",
 )
 
 

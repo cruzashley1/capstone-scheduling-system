@@ -43,6 +43,7 @@ party being up.
 
 import json
 import os
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
@@ -67,6 +68,32 @@ tls_fix.configure()
 # capstone needs the model that produced its results to still exist at
 # defence time; the preview tiers can change or be withdrawn.
 DEFAULT_MODEL = "gemini-2.5-flash"
+
+# Tried in order when the one before runs out of quota.
+#
+# The free tier's limit is 20 requests per day PER MODEL —
+# GenerateRequestsPerDayPerProjectPerModel-FreeTier — so these are three
+# separate allowances, not one shared pool, and walking down the chain
+# roughly triples the day's headroom. Verified: 2.5-flash-lite answered
+# with structured output while 2.5-flash was already exhausted.
+#
+# Ordered best-first, so the fallbacks are a degradation and never a
+# default. flash-lite is a weaker model and it shows in the writing, not
+# the choosing — on the seeded fairness case it still departed from the
+# rule ranking for the right reason.
+#
+# This is a free-tier measure. With billing enabled the first entry
+# answers every time and the rest are dead weight that costs nothing.
+FALLBACK_MODELS = ("gemini-2.5-flash-lite", "gemini-3.1-flash-lite")
+
+# Stop this many calls short of the per-model daily limit.
+#
+# Quota is counted by Google, not by us, and a 429 is only discovered by
+# spending a request to be refused. Holding a few back per model means a
+# demo that opens a handful of absences still has somewhere to go after a
+# day of development has eaten most of the allowance.
+DAILY_LIMIT_PER_MODEL = 20
+DAILY_RESERVE = 3
 
 # Bumped whenever the wording below changes. Stored beside each saved
 # suggestion so a recorded answer can always be traced to the prompt that
@@ -311,9 +338,64 @@ def _validate(parsed, candidate_ids):
         "risk": _clean_text(parsed.get("risk"), required=False),
         "runnerUpId": runner_up,
         "runnerUpTradeoff": tradeoff,
-        "model": model_name(),
+        # Stamped by the caller, which is the only thing that knows which
+        # model down the fallback chain actually answered.
+        "model": None,
         "promptVersion": PROMPT_VERSION,
     }
+
+
+# {"YYYY-MM-DD": {model: calls}} — this process's own count of what it
+# has spent today. Google is the authority and we cannot read its
+# counter, so this is a floor, not a ledger: a restarted server forgets,
+# and two Render instances would each count only their own. It exists to
+# stop a single process burning the whole allowance, which is the failure
+# that actually happens, and it is deliberately not persisted — a stale
+# count in the database would refuse calls that quota would have allowed.
+_spent = {}
+
+
+def _today():
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _budget_left(model):
+    """Calls this process still considers safe to make on `model` today."""
+    used = _spent.get(_today(), {}).get(model, 0)
+    return max(0, DAILY_LIMIT_PER_MODEL - DAILY_RESERVE - used)
+
+
+def _record_spend(model):
+    day = _spent.setdefault(_today(), {})
+    day[model] = day.get(model, 0) + 1
+    # Yesterday's counts can never be consulted again.
+    for stale in [d for d in _spent if d != _today()]:
+        _spent.pop(stale, None)
+
+
+def _is_quota_error(e):
+    text = str(e)
+    return "RESOURCE_EXHAUSTED" in text or "429" in text
+
+
+def _ask(client, model, context):
+    """One attempt at one model. Raises; the caller decides what a
+    failure means for the chain."""
+    from google.genai import types
+
+    response = client.models.generate_content(
+        model=model,
+        contents=json.dumps(context, ensure_ascii=False),
+        config=types.GenerateContentConfig(
+            system_instruction=_SYSTEM_INSTRUCTION,
+            response_mime_type="application/json",
+            response_schema=_RESPONSE_SCHEMA,
+            temperature=TEMPERATURE,
+            thinking_config=types.ThinkingConfig(
+                thinking_budget=THINKING_BUDGET),
+        ),
+    )
+    return json.loads(response.text)
 
 
 def review_candidates(context):
@@ -324,15 +406,23 @@ def review_candidates(context):
     workload and recent cover history. Its "candidates" list is the only
     source of ids the answer may name.
 
+    Walks FALLBACK_MODELS when a model is out of quota, because those
+    allowances are per-model and independent. Any other failure stops the
+    chain: a timeout or a malformed response is not something a different
+    model is likely to fix, and retrying it would spend somebody else's
+    quota to fail again more slowly.
+
     Returns the validated review dict, or None for every failure mode
-    there is. Callers handle None; they never handle an exception from
-    here.
+    there is. Callers handle None; they never handle an exception.
     """
     if not is_enabled():
         return None
 
     candidates = (context or {}).get("candidates") or []
-    if not candidates:
+    if len(candidates) < 2:
+        # Nothing to weigh. One candidate is not a recommendation, it is
+        # the only option, and the screen can say so without spending a
+        # request that the free tier counts.
         return None
     candidate_ids = {c.get("id") for c in candidates}
 
@@ -340,37 +430,31 @@ def review_candidates(context):
     if client is None:
         return None
 
-    try:
-        from google.genai import types
+    exhausted = []
+    for model in (model_name(),) + FALLBACK_MODELS:
+        if _budget_left(model) <= 0:
+            exhausted.append(f"{model} (local budget)")
+            continue
+        try:
+            parsed = _ask(client, model, context)
+        except Exception as e:
+            if _is_quota_error(e):
+                # This model's daily allowance is gone. Mark it spent so
+                # the rest of today's calls skip straight past it, and
+                # try the next allowance along.
+                _spent.setdefault(_today(), {})[model] = DAILY_LIMIT_PER_MODEL
+                exhausted.append(model)
+                continue
+            print(f"ai_service: review unavailable "
+                  f"({type(e).__name__}: {e})")
+            return None
 
-        response = client.models.generate_content(
-            model=model_name(),
-            contents=json.dumps(context, ensure_ascii=False),
-            config=types.GenerateContentConfig(
-                system_instruction=_SYSTEM_INSTRUCTION,
-                response_mime_type="application/json",
-                response_schema=_RESPONSE_SCHEMA,
-                temperature=TEMPERATURE,
-                thinking_config=types.ThinkingConfig(
-                    thinking_budget=THINKING_BUDGET),
-            ),
-        )
-        parsed = json.loads(response.text)
-    except Exception as e:
-        # Timeout, quota, network, malformed JSON — all the same to the
-        # caller, and all recoverable by simply not showing the panel.
-        #
-        # Quota is called out separately because it is the one that will
-        # actually happen and the one that looks like a bug when it does:
-        # the free tier rejects rapid repeat calls with 429, so a panel
-        # that silently stops appearing is usually this and not a broken
-        # deployment. Caching the review per (date, station, shift,
-        # absentee) is what keeps a real admin under the limit.
-        if "RESOURCE_EXHAUSTED" in str(e) or "429" in str(e):
-            print("ai_service: review skipped — Gemini quota/rate limit "
-                  "hit (free tier). The rule-based ranking is unaffected.")
-        else:
-            print(f"ai_service: review unavailable ({type(e).__name__}: {e})")
-        return None
+        _record_spend(model)
+        review = _validate(parsed, candidate_ids)
+        if review is not None:
+            review["model"] = model
+        return review
 
-    return _validate(parsed, candidate_ids)
+    print(f"ai_service: review skipped — daily quota exhausted on "
+          f"{', '.join(exhausted)}. The rule-based ranking is unaffected.")
+    return None
