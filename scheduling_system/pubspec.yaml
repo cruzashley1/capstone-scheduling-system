@@ -68,15 +68,41 @@ flutter:
     - assets/logo/
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
+# Launcher icons for every platform, generated with:
+#   dart run flutter_launcher_icons
+#
+# The source is tool/app_icon_source.png, NOT assets/logo/kaizen_logo.png.
+# They are the same badge, but the asset is 1158x1358 with uneven
+# transparent margins, and this tool resizes to a square without
+# preserving aspect ratio -- feeding it the asset directly squashed the
+# round patch into an ellipse. tool/ is the asset cropped to its alpha
+# bounding box (the badge itself is 1101x1102, so square already) and
+# padded to 1024x1024. It lives outside assets/ on purpose: pubspec
+# bundles all of assets/logo/, and the icon source is build input, not
+# something the running app ever loads.
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: false
-  image_path: "assets/logo/kaizen_logo.png"
+  image_path: "tool/app_icon_source.png"
   web:
     generate: true
-    image_path: "assets/logo/kaizen_logo.png" # Replace with your actual file name
+    image_path: "tool/app_icon_source.png"
     background_color: "#ffffff"
     theme_color: "#ffffff"
+  windows:
+    generate: true
+    image_path: "tool/app_icon_source.png"
+    # Writes windows/runner/resources/app_icon.ico, which Runner.rc
+    # compiles into the .exe.
+    #
+    # CAUTION: this tool emits a single 256x256 entry, and the committed
+    # .ico has seven (16/24/32/48/64/128/256). Windows picks the nearest
+    # entry and scales -- with only 256 available, the taskbar and
+    # Explorer's details view downscale 256->16 on the fly and look soft.
+    # So re-running `dart run flutter_launcher_icons` REGRESSES the
+    # Windows icon. Regenerate the multi-size file afterwards with
+    # tool/make_windows_icon.py.
+    icon_size: 256
 
 
   # https://flutter.dev/to/resolution-aware-images
