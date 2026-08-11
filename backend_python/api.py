@@ -2666,7 +2666,13 @@ def suggest_replacements(date: str, station: str, shift: str,
     """Rule-based replacement suggestions for one absence (replaces the
     flowchart's AI box): only employees with NO schedule conflict on
     that date and who are eligible for the post's shift type, ranked by
-    station familiarity, type match, and lighter workload."""
+    station familiarity, type match, and lighter workload.
+
+    `coverWindow` carries when that post runs and the instant it times
+    out — past which nobody can be assigned to it, because the duty is
+    over. It states the deadline rather than "closed: true" so this
+    response says the same thing all day; the admin app compares it
+    against the server clock, and /replacements/apply enforces it."""
     if db is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
@@ -2676,9 +2682,14 @@ def suggest_replacements(date: str, station: str, shift: str,
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
 
     try:
+        station = station.strip()
+        schedules = repo.schedules.list()
         candidates = replacements.suggest(
-            db, date, station.strip(), shift, absentEmployeeId)
-        return {"success": True, "candidates": candidates}
+            db, date, station, shift, absentEmployeeId, schedules=schedules)
+        window = replacements.cover_window(
+            db, date, station, shift, absentEmployeeId, schedules=schedules)
+        return {"success": True, "candidates": candidates,
+                "coverWindow": window}
     except Exception as e:
         raise HTTPException(status_code=500,
                             detail=f"Failed to suggest replacements: {str(e)}")
@@ -2689,14 +2700,18 @@ def apply_replacement(request: ReplacementApplyRequest):
     """Commits the admin's chosen replacement: rewrites the schedule
     entry (replacement covers the absentee), stamps the attendance
     report record as replaced, saves an audit doc, and notifies the
-    chosen employee that their schedule changed."""
+    chosen employee that their schedule changed.
+
+    Refused with 409 once the post has timed out — there is no duty left
+    to stand, so the cover would only falsify the schedule after the
+    fact."""
     if db is None:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
         record = replacements.apply_replacement(db, request)
         return {"success": True, "replacement": record}
-    except ValueError as e:      # replacement now has a conflict
+    except ValueError as e:      # conflict, or the cover window has shut
         raise HTTPException(status_code=409, detail=str(e))
     except LookupError as e:     # schedule/entry/employee not found
         raise HTTPException(status_code=404, detail=str(e))

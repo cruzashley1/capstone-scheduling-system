@@ -1252,6 +1252,10 @@ class ApiService {
   // Asks Python for ranked replacement candidates for one absence.
   // The backend already filters out anyone with a schedule conflict on
   // that date and anyone ineligible for the post's shift type.
+  //
+  // `coverWindowEndsAt` is when that post times out, read off the absent
+  // guard's own schedule entry — past it nobody can be assigned, because
+  // the duty is over (see CoverWindow). Null on an older backend.
   static Future<Map<String, dynamic>> suggestReplacements({
     required String date,
     required String station,
@@ -1274,12 +1278,15 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final List<dynamic> raw = data["candidates"] ?? [];
+        final window = data["coverWindow"];
         return {
           "success": true,
           "candidates": raw
               .map((c) => ReplacementCandidate.fromJson(
                   Map<String, dynamic>.from(c)))
               .toList(),
+          "coverWindowEndsAt":
+              window is Map ? window["endsAt"]?.toString() : null,
         };
       } else {
         return {

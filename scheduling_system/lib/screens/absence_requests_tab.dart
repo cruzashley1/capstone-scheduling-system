@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import '../models/absence_request.dart';
 import '../models/replacement.dart';
 import '../services/api_service.dart';
+import '../services/cover_window.dart';
 import 'main_layout.dart';
 
 class AbsenceRequestsTab extends StatefulWidget {
@@ -154,29 +155,38 @@ class AbsenceRequestsTabState extends State<AbsenceRequestsTab> {
     );
   }
 
-  // 'Morning Shift' -> 'Morning', 'HG Day Shift' -> 'HG Day' — the shift
-  // titles the guard app stores map to the canonical post labels the
-  // replacement engine expects (Morning|Afternoon|Night|HG Day|HG Night).
-  String _canonicalShift(String shiftTitle) {
-    final t = shiftTitle.trim();
-    if (t.toLowerCase().endsWith(' shift')) {
-      return t.substring(0, t.length - ' shift'.length).trim();
-    }
-    return t;
-  }
+  // True once the duty this request was filed against is certainly over.
+  //
+  // A request can sit here unanswered for days — filed on the 9th, still
+  // pending on the 11th. Its shift is long over by then, so there is no
+  // post left to cover and the cover step has to drop out of the flow.
+  //
+  // Deliberately the conservative reading: a request carries a shift NAME
+  // and no post window, and a station's ladder can man a post hours past
+  // its shift's base hours. Judging by those base hours would push the
+  // admin to approve without a cover on an afternoon when a cover was
+  // still perfectly possible. Anything this doesn't catch is caught by
+  // Find Replacement, which fetches the post's real window.
+  bool _dutyEnded(AbsenceRequest request) =>
+      CoverWindow.certainlyClosed(request.date);
 
   // Approving an absence means finding a same-role cover first: this hands
   // off to the Find Replacement screen, which only approves the request
   // once a cover is assigned (a head guard can only be covered by another
   // head guard — enforced by the backend's eligibility rules). A request
   // with no scheduled post to cover (rest day / unknown) is approved
-  // directly, since there's nothing to fill.
+  // directly, since there's nothing to fill — and so is one whose shift
+  // has already ended, where the post is past covering and the only thing
+  // left to decide is whether the absence itself was excused.
   void _approve(AbsenceRequest request) {
     final navigate = widget.onNavigate;
     final station = request.station.trim();
-    final shift = _canonicalShift(request.shiftTitle);
+    final shift = CoverWindow.canonicalShift(request.shiftTitle);
 
-    if (navigate == null || station.isEmpty || shift.isEmpty) {
+    if (navigate == null ||
+        station.isEmpty ||
+        shift.isEmpty ||
+        _dutyEnded(request)) {
       _decide(request, 'approved');
       return;
     }
@@ -202,6 +212,10 @@ class AbsenceRequestsTabState extends State<AbsenceRequestsTab> {
     final accent =
         approving ? const Color(0xFF16A34A) : const Color(0xFFDC2626);
     final noteController = TextEditingController();
+    // Approving normally routes through Find Replacement, so when the
+    // dialog appears for an approval the admin is owed a reason why it
+    // didn't this time.
+    final ended = approving && _dutyEnded(request);
 
     String note = '';
     bool confirmed = false;
@@ -249,6 +263,38 @@ class AbsenceRequestsTabState extends State<AbsenceRequestsTab> {
                         height: 1.5,
                       ),
                     ),
+                    if (ended) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(10),
+                          border:
+                              Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.history_toggle_off_rounded,
+                                size: 16, color: Color(0xFF64748B)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'That shift has already ended, so no cover '
+                                'will be assigned — approving now only '
+                                'records the absence as excused.',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: Colors.grey[700],
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     TextField(
                       controller: noteController,
@@ -642,6 +688,11 @@ class AbsenceRequestsTabState extends State<AbsenceRequestsTab> {
                           _buildMetaChip(
                               Icons.medical_information_outlined,
                               request.reason),
+                          // Says up front that Approve won't be offering a
+                          // cover for this one — the shift is over.
+                          if (request.isPending && _dutyEnded(request))
+                            _buildMetaChip(Icons.history_toggle_off_rounded,
+                                'Shift ended — no cover possible'),
                         ],
                       ),
                       const SizedBox(height: 10),

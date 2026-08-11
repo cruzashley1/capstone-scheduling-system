@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../models/attendance_report.dart';
 import '../models/replacement.dart';
 import '../services/api_service.dart';
+import '../services/cover_window.dart';
 import 'main_layout.dart';
 
 // One absent person's row.
@@ -586,7 +587,11 @@ class _AbsentManagementContentState extends State<AbsentManagementContent> {
   }
 
   // "Find Replacement" opens the suggestion screen for this absence;
-  // once covered, the cell shows who replaced them instead.
+  // once covered, the cell shows who replaced them instead. And once the
+  // post has timed out the button goes altogether — there is nobody left
+  // to send to a duty that is over (see CoverWindow). This list is "today"
+  // but a night post from yesterday can still be running, and a report
+  // filed this morning is already history by the afternoon.
   Widget _buildActionCell(_AbsenceRow row) {
     if (row.record.isReplaced) {
       return Align(
@@ -619,6 +624,35 @@ class _AbsentManagementContentState extends State<AbsentManagementContent> {
         ),
       );
     }
+    final end = CoverWindow.endsAt(row.date, row.record.shift,
+        range: row.record.time);
+    if (end != null && CoverWindow.hasPassed(end)) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Tooltip(
+          message: 'This ${row.record.shift} post ${CoverWindow.closedLabel(end)}'
+              ' — a replacement can only be assigned while the duty is '
+              'still running.',
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.history_toggle_off_rounded,
+                  size: 14, color: Color(0xFF94A3B8)),
+              const SizedBox(width: 5),
+              Text(
+                'Shift ended',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey[500],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Align(
       alignment: Alignment.centerLeft,
       child: TextButton.icon(

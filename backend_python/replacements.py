@@ -24,14 +24,23 @@ the chosen replacement (marked coveringFor=absentee), the attendance
 report record is stamped replacedBy*, an audit doc is written to
 `replacements/`, and a notification for the chosen guard is written to
 `employee_notifications/` (shown in the guard app's Alerts tab).
+
+THE COVER WINDOW closes at the post's time-out — see cover_window().
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import repositories
+import station_posts
 
 DAY_SHIFTS = ("Morning", "Afternoon")
 HG_SHIFTS = ("HG Day", "HG Night")
+
+# Philippine Standard Time. Fixed +8 with no DST, so a plain offset is
+# exact and needs no tzdata — and it keeps the cover window below anchored
+# to the guards' own clock whatever timezone the server runs in. Mirrors
+# api.py's _PHT.
+_PHT = timezone(timedelta(hours=8))
 
 
 def _covering(schedules, date_iso):
@@ -61,6 +70,131 @@ def _absent_ids(db, date_iso):
             if not rec.get("isPresent", True):
                 ids.add(rec.get("employeeId"))
     return ids
+
+
+# ---------------------------------------------------------------------
+# The cover window
+#
+# A replacement is somebody sent to STAND a post. Once the post has timed
+# out there is nothing left to stand, so the window closes there: past
+# time-out, assigning a cover would rewrite a duty that is already
+# history, tell a guard to report for a shift that finished hours ago,
+# and leave the schedule disagreeing with what happened on the ground.
+#
+# It closes at time-out, not at time-in: a guard going absent mid-shift
+# is exactly the case this flow exists for, and the rest of the post is
+# still worth manning.
+# ---------------------------------------------------------------------
+
+def _entry_window(schedules, date_iso, station, shift, employee_id):
+    """The ("HH:MM", "HH:MM") duty window of the post `employee_id` mans
+    on that date, straight off their own schedule entry.
+
+    Posts are staggered per station (station_posts' ladder), so two guards
+    on the same Morning shift can time out four hours apart — the entry's
+    own window is the only honest answer. None when the guard has no entry
+    that day, or the entry predates posts carrying times.
+    """
+    fallback = None
+    for sched in schedules:
+        if station and (sched.get("stationName") or "").strip() != station:
+            continue
+        for day in sched.get("days", []):
+            if day.get("date") != date_iso:
+                continue
+            for entry in day.get("entries", []):
+                if entry.get("employeeId") != employee_id:
+                    continue
+                start, end = entry.get("timeIn"), entry.get("timeOut")
+                if not (start and end):
+                    continue
+                if entry.get("shift") == shift:
+                    return start, end
+                # A shift-label mismatch is tolerated the same way
+                # apply_replacement tolerates it — kept only if no
+                # exactly-matching entry turns up.
+                fallback = fallback or (start, end)
+    return fallback
+
+
+def _base_window(shift):
+    """A shift label's un-staggered hours, for a post with none of its
+    own. None on a label the system doesn't know."""
+    hg = station_posts.HG_SHIFT_WINDOWS.get(shift)
+    if hg is not None:
+        return hg
+    key = station_posts.SHIFT_LABEL_KEYS.get(shift)
+    return station_posts.SHIFT_WINDOWS.get(key) if key else None
+
+
+def cover_window(db, date_iso, station, shift, absent_id, schedules=None):
+    """When the post being covered runs, and the instant it times out.
+
+    Returns ``{"endsAt", "timeIn", "timeOut", "shift"}``. `endsAt` is an
+    ISO instant in Philippine time — deterministic, derived from the
+    schedule alone, with the clock comparison left to is_closed(). That
+    split is deliberate: it keeps GET /replacements/suggest returning the
+    same thing all day, and puts the "has it passed" decision in one
+    place that both the API and the admin app answer from.
+
+    None only when `date_iso` can't be read as a date.
+    """
+    try:
+        duty_date = datetime.strptime(date_iso, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+    if schedules is None:
+        schedules = repositories.from_db(db).schedules.list()
+    window = _entry_window(_covering(schedules, date_iso), date_iso,
+                           (station or "").strip(), shift, absent_id)
+    window = window or _base_window(shift)
+
+    start = station_posts.parse_hhmm(window[0]) if window else None
+    end = station_posts.parse_hhmm(window[1]) if window else None
+
+    if start is None or end is None:
+        # No readable hours for this post anywhere. Fall back to the end
+        # of the calendar day, matching api.py's _duty_has_ended: the
+        # permissive read, so a shift missing from the table can't block
+        # a cover that is still genuinely needed.
+        ends_at = datetime.combine(duty_date + timedelta(days=1),
+                                   datetime.min.time(), tzinfo=_PHT)
+        return {"endsAt": ends_at.isoformat(), "timeIn": None,
+                "timeOut": None, "shift": shift}
+
+    # An overnight post (Night 2100H-0500H, HG Night 1700H-0500H) times
+    # out on the day AFTER the duty date.
+    day = duty_date + timedelta(days=1) if end <= start else duty_date
+    ends_at = datetime(day.year, day.month, day.day, end // 60, end % 60,
+                       tzinfo=_PHT)
+    return {
+        "endsAt": ends_at.isoformat(),
+        "timeIn": station_posts.format_hhmm(start),
+        "timeOut": station_posts.format_hhmm(end),
+        "shift": shift,
+    }
+
+
+def is_closed(window, now=None):
+    """True once the post in `window` has timed out. An unreadable window
+    is treated as open — see cover_window's permissive fallback."""
+    if not window or not window.get("endsAt"):
+        return False
+    return (now or datetime.now(_PHT)) >= datetime.fromisoformat(
+        window["endsAt"])
+
+
+def closed_reason(window, station, shift, date_iso):
+    """Why the admin can't assign anyone — worded so they know it's the
+    clock refusing, not a missing candidate."""
+    time_out = window.get("timeOut") if window else None
+    stood = (f"timed out at "
+             f"{station_posts.format_military(station_posts.parse_hhmm(time_out))} "
+             if time_out else "ended ")
+    return (f"The {shift} post at {station} on {date_iso} {stood}— that "
+            f"duty is over, so a replacement can no longer be assigned to "
+            f"it.")
 
 
 def _days_worked(schedules, employee_id):
@@ -159,12 +293,18 @@ def _volunteer_boost(offer, station, shift):
     return bonus, reasons
 
 
-def suggest(db, date_iso, station, shift, absent_id):
+def suggest(db, date_iso, station, shift, absent_id, schedules=None):
     """Returns ranked, conflict-free replacement candidates. Guards who
     volunteered to cover this date (active cover offers) are boosted and
     always sort above non-volunteers, so a willing colleague sits at the
-    top of the admin's list."""
-    schedules = repositories.from_db(db).schedules.list()
+    top of the admin's list.
+
+    Deliberately clock-free: whether the post has already timed out is
+    cover_window()'s question, asked alongside this one, so the ranking
+    itself stays the same all day.
+    """
+    if schedules is None:
+        schedules = repositories.from_db(db).schedules.list()
     covering = _covering(schedules, date_iso)
     busy = _busy_ids(covering, date_iso)
     absent_today = _absent_ids(db, date_iso)
@@ -224,6 +364,14 @@ def apply_replacement(db, req):
 
     covering = [s for s in repo.schedules.list()
                 if s.get("startDate", "") <= date_iso <= s.get("endDate", "")]
+
+    # The post has to still be standing. This is the authoritative check —
+    # the admin screens hide the button once the window shuts, but a
+    # screen left open since yesterday would otherwise still post here.
+    window = cover_window(db, date_iso, station, shift, req.absentEmployeeId,
+                          schedules=covering)
+    if is_closed(window):
+        raise ValueError(closed_reason(window, station, shift, date_iso))
 
     # Re-check the no-conflict rule right before writing, in case the
     # suggestion list went stale while the admin was deciding.

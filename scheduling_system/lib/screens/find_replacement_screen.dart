@@ -6,10 +6,17 @@
 // (employee_detail_screen), and commits the chosen replacement —
 // which updates the schedule, stamps the report record, and notifies
 // the chosen guard.
+//
+// Unless the post has already timed out. A cover is somebody sent to
+// stand a post, so once the duty is over there is nobody to send: the
+// screen then shows the closed window instead of a candidate list. The
+// backend refuses the same case with 409, so a screen left open across
+// the deadline can't slip one through either — see CoverWindow.
 
 import 'package:flutter/material.dart';
 import '../models/replacement.dart';
 import '../services/api_service.dart';
+import '../services/cover_window.dart';
 import 'main_layout.dart';
 
 class FindReplacementScreen extends StatefulWidget {
@@ -32,11 +39,26 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
   String? _loadError;
   bool _isApplying = false;
 
+  // When the post being covered times out. The backend reads it off the
+  // absent guard's own schedule entry, so it accounts for the station's
+  // staggered post times; until the fetch lands it's derived from the
+  // shift name, which is enough to keep a plainly-finished duty from
+  // flashing a list of candidates.
+  DateTime? _windowEndsAt;
+
   ReplacementRequest get _req => widget.request;
+
+  // The duty is over — nobody can be sent to stand a post that has
+  // already been stood, so there is nothing to assign here.
+  bool get _isWindowClosed {
+    final end = _windowEndsAt;
+    return end != null && CoverWindow.hasPassed(end);
+  }
 
   @override
   void initState() {
     super.initState();
+    _windowEndsAt = CoverWindow.endsAt(_req.date, _req.shift);
     _loadCandidates();
   }
 
@@ -59,6 +81,14 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
       if (result['success'] == true) {
         _candidates =
             (result['candidates'] as List).cast<ReplacementCandidate>();
+        // The server's window is the exact one — it knows which post this
+        // guard mans. Keep the estimate if an older backend omits it.
+        _windowEndsAt = CoverWindow.endsAt(
+              _req.date,
+              _req.shift,
+              endsAtIso: result['coverWindowEndsAt']?.toString(),
+            ) ??
+            _windowEndsAt;
       } else {
         _loadError = result['error']?.toString() ?? 'Failed to load';
       }
@@ -79,6 +109,22 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
   }
 
   Future<void> _confirmAndAssign(ReplacementCandidate candidate) async {
+    // The window can shut while this screen sits open — nothing here
+    // ticks, so re-check it on the way in rather than sending a doomed
+    // request the backend will refuse anyway.
+    if (_isWindowClosed) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('The ${_req.shift} post on ${_req.date} has timed '
+              'out — a replacement can no longer be assigned.'),
+          backgroundColor: const Color(0xFF475569),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -160,6 +206,109 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
     _goBack();
   }
 
+  // Approves the absence request with no cover attached — the only
+  // decision left once the post has timed out. Same call the Notifications
+  // tab makes for a request with nothing to cover, offered from here
+  // because this is where the admin finds out there's nothing to assign.
+  Future<void> _approveWithoutCover() async {
+    final absenceId = _req.absenceRequestId;
+    if (absenceId == null) return;
+
+    final noteController = TextEditingController();
+    bool confirmed = false;
+    String note = '';
+    try {
+      confirmed = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              shape:
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Text('Approve without a cover?'),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${_req.absentName}\'s absence on ${_req.date} will be '
+                      'marked approved. The ${_req.shift} post at '
+                      '${_req.station} stays uncovered on the record, '
+                      'because that shift has already ended.',
+                      style: TextStyle(
+                          fontSize: 13, color: Colors.grey[700], height: 1.5),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: noteController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Note to the employee (optional)',
+                        labelStyle:
+                            TextStyle(fontSize: 13, color: Colors.grey[600]),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF16A34A),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Approve'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      note = noteController.text.trim();
+    } finally {
+      noteController.dispose();
+    }
+    if (!confirmed || !mounted) return;
+
+    setState(() => _isApplying = true);
+    final result = await ApiService.decideAbsenceRequest(
+      id: absenceId,
+      status: 'approved',
+      adminNote: note,
+    );
+    if (!mounted) return;
+    setState(() => _isApplying = false);
+
+    if (result['success'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['error']?.toString() ??
+              'Could not save the decision.'),
+          backgroundColor: const Color(0xFFDC2626),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Absence approved — ${_req.absentName} has been '
+            'notified. No cover was assigned.'),
+        backgroundColor: const Color(0xFF16A34A),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    _goBack();
+  }
+
   void _openEmployeeDetail(ReplacementCandidate candidate) {
     widget.onNavigate(
       ScreenType.employeeDetail,
@@ -201,9 +350,12 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
                         ),
                       ),
                       Text(
-                        _req.isApprovalFlow
-                            ? 'Assign a cover to approve this absence'
-                            : 'Suitable, conflict-free candidates for this post',
+                        _isWindowClosed
+                            ? 'This duty has already ended'
+                            : _req.isApprovalFlow
+                                ? 'Assign a cover to approve this absence'
+                                : 'Suitable, conflict-free candidates for '
+                                    'this post',
                         style: TextStyle(
                           color: Colors.grey[600],
                           fontSize: 14,
@@ -241,6 +393,8 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
 
                         if (_loadError != null)
                           _buildErrorBanner()
+                        else if (_isWindowClosed)
+                          _buildWindowClosedState()
                         else ...[
                           Row(
                             children: [
@@ -293,26 +447,32 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
     );
   }
 
-  // Who is absent, where, when — the post that needs covering.
+  // Who is absent, where, when — the post that needs covering. Once the
+  // duty is over it is drawn in slate rather than red: nothing is
+  // outstanding any more, it's a record of what happened.
   Widget _buildAbsenceContextCard() {
+    final closed = _isWindowClosed;
+    final accent =
+        closed ? const Color(0xFF64748B) : Colors.red[500]!;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2),
+        color: closed ? const Color(0xFFF1F5F9) : const Color(0xFFFEF2F2),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFECACA)),
+        border: Border.all(
+            color: closed ? const Color(0xFFE2E8F0) : const Color(0xFFFECACA)),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.1),
+              color: accent.withOpacity(0.1),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(Icons.person_off_outlined,
-                color: Colors.red[500], size: 26),
+            child: Icon(Icons.person_off_outlined, color: accent, size: 26),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -339,15 +499,15 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.1),
+              color: accent.withOpacity(0.1),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text(
-              'Needs replacement',
+              closed ? 'Shift ended' : 'Needs replacement',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
-                color: Colors.red[600],
+                color: closed ? const Color(0xFF475569) : Colors.red[600],
               ),
             ),
           ),
@@ -378,6 +538,108 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
           TextButton(
             onPressed: _loadCandidates,
             child: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Shown instead of the candidate list once the post has timed out.
+  // There is no "retry" here and no way back into the list — the duty is
+  // over, and the only honest thing left is to say so and point the admin
+  // at what they CAN still do.
+  Widget _buildWindowClosedState() {
+    final end = _windowEndsAt;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 44, horizontal: 32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF94A3B8).withOpacity(0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.history_toggle_off_rounded,
+                size: 34, color: Color(0xFF64748B)),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'This duty has already ended',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF334155),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'The ${_req.shift} post at ${_req.station} on ${_req.date} '
+            '${end == null ? 'is over' : CoverWindow.closedLabel(end)}. '
+            'A replacement is somebody sent to stand the post, so there is '
+            'no longer anyone to send — ${_req.absentName}\'s absence stays '
+            'on the record as it happened.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: Colors.grey[600], height: 1.5),
+          ),
+          if (_req.isApprovalFlow) ...[
+            const SizedBox(height: 10),
+            Text(
+              'The request itself still needs an answer. Approving it now '
+              'excuses the absence without a cover — which is all that is '
+              'left to decide once the shift is finished.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 13, color: Colors.grey[600], height: 1.5),
+            ),
+          ],
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _isApplying ? null : _goBack,
+                icon: const Icon(Icons.arrow_back, size: 16),
+                label: Text(
+                    _req.isApprovalFlow ? 'Back to the request' : 'Back'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF1034A6),
+                  side: const BorderSide(color: Color(0xFFC7D2FE)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+              // Without this the approval flow dead-ends: the admin was
+              // sent here to find a cover, there is no cover to find, and
+              // going back only offers the same button again.
+              if (_req.isApprovalFlow)
+                ElevatedButton.icon(
+                  onPressed: _isApplying ? null : _approveWithoutCover,
+                  icon: const Icon(Icons.check, size: 16),
+                  label: const Text('Approve without a cover'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF16A34A),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ],
       ),

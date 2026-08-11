@@ -10,6 +10,7 @@ import '../data/attendance_report_dummy_data.dart';
 import '../models/attendance_report.dart';
 import '../models/replacement.dart';
 import '../services/api_service.dart';
+import '../services/cover_window.dart';
 import 'main_layout.dart';
 
 // ─────────────────────────────────────────────
@@ -800,6 +801,11 @@ class SubmittedReportDetailContent extends StatelessWidget {
   // Flowchart: "AI suggest suitable replacement" — the button hands the
   // absence to the Find Replacement screen; once covered, the card shows
   // who replaced them instead.
+  //
+  // Reports are read long after the shift they cover, so the button also
+  // has to disappear once that post has timed out: there is nobody left
+  // to send to a duty that is over (see CoverWindow). What's left is a
+  // record of an absence that went uncovered, which is the truth.
   Widget _buildReplacementAction(AttendanceRecord record) {
     if (record.isReplaced) {
       return Container(
@@ -825,6 +831,34 @@ class SubmittedReportDetailContent extends StatelessWidget {
         ),
       );
     }
+    final end =
+        CoverWindow.endsAt(report.date, record.shift, range: record.time);
+    if (end != null && CoverWindow.hasPassed(end)) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.history_toggle_off_rounded,
+                size: 14, color: Color(0xFF94A3B8)),
+            const SizedBox(width: 6),
+            Text(
+              'Shift ended — no cover possible',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return ElevatedButton.icon(
       onPressed: () => onNavigate?.call(
         ScreenType.findReplacement,
