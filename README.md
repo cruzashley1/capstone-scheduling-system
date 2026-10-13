@@ -15,7 +15,7 @@ can read and act on.
 
 ```
   Flutter app  ──HTTP/JSON──▶  FastAPI (Python)  ──▶  Supabase Postgres
-  admin · head guard · guard      scheduling engine        17 tables
+  admin · head guard · guard      scheduling engine        21 tables
                                   + Gemini (advisory)
 ```
 
@@ -23,7 +23,7 @@ can read and act on.
 
 ## Who uses it, and what they can do
 
-The same codebase serves three roles; login decides which UI opens.
+The same codebase serves admin, Assistant Security, Area Commander, head guard, regular guard and reliever accounts; login decides which UI opens.
 
 ### Admin — the scheduling office
 Runs as a desktop/web app with a full sidebar.
@@ -33,12 +33,28 @@ Runs as a desktop/web app with a full sidebar.
 | **Dashboard** | Live counts for today — on duty, absent, available, unassigned — each one tappable into the list behind it |
 | **Security Management** | The employee roster: add, edit, deactivate, reset passwords, set assigned station/shift and preferred stations |
 | **Station Management** | The 25 stations and, per station, the **per-shift post setup** — how many guards each shift takes and the named post filling each slot |
-| **Generate Schedule** | Runs the engine for a station group (or one station) over a 15-day period, shows the roster with its notes, then publishes |
-| **Schedule Management** | Published and draft schedules: edit a single assignment, add an employee, re-post, unpublish, delete |
+| **Generate Schedule** | Runs the engine for a station group (or one station) over a 15-day period, shows the roster with its notes, then saves drafts for period-wide approval |
+| **Schedule Management** | Published and draft schedules: edit drafts, add an employee, re-post, and submit complete periods for approval |
 | **Notifications** | Everything guards filed — absence requests, leave requests, special day-off requests, submitted attendance reports — with approve/deny in place |
 | **Find Replacement** | Ranked, conflict-free candidates for an absence, with an optional AI second opinion; committing one rewrites the schedule and notifies the guard |
-| **Reports** | Printable/PDF schedule reports (per station, per period) and leave reports (company-wide, yearly), on agency letterhead with configurable signatories |
+| **Reports** | Approved schedule PDFs (per station or whole period), with recorded reviewer names and dates; yearly leave reports retain configurable signatories |
 | **Settings** | Company/profile details, password change, developer switches |
+
+### Assistant Security and Area Commander (schedule reviewers)
+
+Both use a desktop review screen for all stations. The admin submits one
+complete period through **Period Approvals**. Assistant Security approves
+first, then Area Commander. The final decision automatically publishes every
+station and unlocks schedule PDF export. Either official can return the
+submission with revision comments.
+
+The admin creates their accounts in **Official Accounts**. Submitted rosters,
+decisions and emergency amendments are preserved in history. Emergency
+replacements take effect immediately and notify both officials; routine
+revisions require both approvals again.
+
+Deployment requires migration **005** and updated clients. See
+[Schedule approval setup and usage](backend_python/SCHEDULE_APPROVALS.md).
 
 ### Head Guard — the station supervisor
 Mobile layout, scoped to their own station.
@@ -288,12 +304,13 @@ prototype/
 
 ## Data
 
-18 Postgres tables ([`schema/`](backend_python/schema/)): `stations`,
+21 Postgres tables ([`schema/`](backend_python/schema/)): `stations`,
 `employees`, `users`, `counters`, `rotation_cycles`,
 `station_rotation_assignments`, `special_assignments`, `schedules`,
 `duty_assignments`, `attendance_reports`, `absence_requests`,
 `special_requests`, `leave_requests`, `cover_offers`, `replacements`,
-`employee_notifications`, `auth_accounts`, `ai_suggestions`.
+`employee_notifications`, `auth_accounts`, `ai_suggestions`, `auth_sessions`,
+`schedule_approvals`, `workflow_notifications`.
 
 Credentials live in **`auth_accounts`**, never on the employee record.
 Passwords are **bcrypt** hashes and cannot be read back — a forgotten password

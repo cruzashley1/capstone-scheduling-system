@@ -15,6 +15,7 @@ golden files prove the refactor was inert.
 """
 
 from contextlib import contextmanager
+import copy
 
 import db_init
 from repositories.base import (COLLECTIONS, CollectionRepo, Repository,
@@ -183,6 +184,20 @@ class DocumentRepository(Repository):
         if name not in self._repos:
             self._repos[name] = DocumentCollectionRepo(self._db, name)
         return self._repos[name]
+
+    @contextmanager
+    def workflow_transaction(self):
+        """Serialize workflow changes and restore the offline store on error."""
+        store = self._db._store
+        with store.lock, store.deferred_flush():
+            before = copy.deepcopy(store._collections)
+            pending = set(store._pending)
+            try:
+                yield
+            except BaseException:
+                store._collections = before
+                store._pending = pending
+                raise
 
     @contextmanager
     def transaction(self):

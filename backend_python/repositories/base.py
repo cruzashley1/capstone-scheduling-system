@@ -50,6 +50,9 @@ COLLECTIONS = (
     # review — schema/003_ai_suggestions.sql, which must be applied
     # before this name is added or Supabase refuses to start.
     "ai_suggestions",
+    "auth_sessions",
+    "schedule_approvals",
+    "workflow_notifications",
 )
 
 

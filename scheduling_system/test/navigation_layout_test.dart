@@ -18,7 +18,9 @@ void main() {
     testWidgets('no layout errors navigating at '
         '${size.width.toInt()}x${size.height.toInt()}', (tester) async {
       final errors = <FlutterErrorDetails>[];
+      final originalErrorHandler = FlutterError.onError;
       FlutterError.onError = (d) => errors.add(d);
+      addTearDown(() => FlutterError.onError = originalErrorHandler);
 
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1.0;
@@ -31,6 +33,8 @@ void main() {
         final before = errors.length;
         final finder = find.text(label);
         if (finder.evaluate().isEmpty) return;
+        await tester.ensureVisible(finder.first);
+        await tester.pump();
         await tester.tap(finder.first);
         for (var i = 0; i < 15; i++) {
           await tester.pump(const Duration(milliseconds: 16));
@@ -53,13 +57,16 @@ void main() {
         await tap('Security Management');
         await tap('Dashboard');
         await tap('Schedule Management');
-        await tap('Auto Scheduler');
+        await tap('Period Approvals');
+        await tap('Official Accounts');
+        await tap('Generate Schedule');
         await tap('Notifications');
         await tap('Reports');
         await tap('Settings');
         await tap('Dashboard');
       }
 
+      FlutterError.onError = originalErrorHandler;
       expect(errors, isEmpty,
           reason: '${errors.length} layout errors at $size');
     });

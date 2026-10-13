@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1860" width="2400" height="1860" role="img" aria-label="Data Flow Diagram Level 0 for A Scheduling and Duty Management With AI Application in Absence Handling, showing the Administrator, Head Guard, Security Personnel and AI Service entities and the data that moves between them and the system.">
+  <defs>
+    <marker id="ar" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#0B0B0C"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="2400" height="1860" fill="#FFFFFF"/>
+
+  <g font-family="'Segoe UI','Nunito Sans','Trebuchet MS',system-ui,sans-serif" fill="#0B0B0C">
+
+    <!-- Title -->
+    <text x="1200" y="102" font-size="66" font-weight="700" text-anchor="middle">Data Flow Diagram Level 0</text>
+
+    <!-- ── Entities & process ───────────────────────────── -->
+    <g fill="none" stroke="#0B0B0C" stroke-width="4">
+      <rect x="90"   y="200"  width="430" height="460"/>
+      <rect x="1880" y="200"  width="430" height="230"/>
+      <rect x="1880" y="1500" width="430" height="260"/>
+      <rect x="90"   y="1500" width="430" height="260"/>
+      <rect x="850"  y="720"  width="700" height="460" rx="48"/>
+      <line x1="850" y1="795" x2="1550" y2="795"/>
+    </g>
+
+    <g font-size="54" text-anchor="middle">
+      <text x="305"  y="448">Administrator</text>
+      <text x="2095" y="295">Head</text>
+      <text x="2095" y="360">Guard</text>
+      <text x="2095" y="1610">Security</text>
+      <text x="2095" y="1675">Personnel</text>
+      <text x="305"  y="1610">AI Service</text>
+      <text x="305"  y="1675">(Gemini)</text>
+    </g>
+
+    <text x="1200" y="775" font-size="46" text-anchor="middle">0</text>
+    <g font-size="46" text-anchor="middle">
+      <text x="1200" y="908">A Scheduling and Duty</text>
+      <text x="1200" y="966">Management</text>
+      <text x="1200" y="1024">With AI Application in</text>
+      <text x="1200" y="1082">Absence Handling</text>
+    </g>
+
+    <!-- ── Data flows ───────────────────────────────────── -->
+    <g fill="none" stroke="#0B0B0C" stroke-width="4" marker-end="url(#ar)">
+      <!-- System → Administrator -->
+      <polyline points="1320,720 1320,250 520,250"/>
+      <polyline points="1230,720 1230,335 520,335"/>
+      <polyline points="1140,720 1140,420 520,420"/>
+      <polyline points="1050,720 1050,505 520,505"/>
+      <polyline points="960,720 960,590 520,590"/>
+      <!-- Administrator → System -->
+      <polyline points="430,660 430,800 850,800"/>
+      <polyline points="340,660 340,910 850,910"/>
+      <polyline points="250,660 250,1020 850,1020"/>
+      <polyline points="160,660 160,1130 850,1130"/>
+      <!-- Head Guard → System -->
+      <polyline points="1880,250 1420,250 1420,720"/>
+      <polyline points="1880,370 1510,370 1510,720"/>
+      <!-- System → Head Guard -->
+      <polyline points="1550,800 1990,800 1990,430"/>
+      <polyline points="1550,900 2130,900 2130,430"/>
+      <!-- System → Security Personnel -->
+      <polyline points="1550,1000 2090,1000 2090,1500"/>
+      <polyline points="1550,1100 1950,1100 1950,1500"/>
+      <!-- Security Personnel → System -->
+      <polyline points="1880,1560 1470,1560 1470,1180"/>
+      <polyline points="1880,1670 1350,1670 1350,1180"/>
+      <!-- System ↔ AI Service -->
+      <polyline points="900,1180 900,1330 300,1330 300,1500"/>
+      <polyline points="520,1620 1000,1620 1000,1180"/>
+    </g>
+
+    <!-- ── Flow labels ──────────────────────────────────── -->
+    <g font-size="38" text-anchor="middle">
+      <!-- System → Administrator -->
+      <text x="920" y="234">Personnel &amp; Station Records</text>
+      <text x="875" y="319">Pending Requests &amp; Reports</text>
+      <text x="830" y="404">Replacement Suggestion</text>
+      <text x="785" y="489">Draft Schedule &amp; Notes</text>
+      <text x="740" y="574">Exported PDF Report</text>
+      <!-- Administrator → System -->
+      <text x="640" y="784">Generate Schedule</text>
+      <text x="595" y="894">Edit &amp; Approve Schedule</text>
+      <text x="550" y="1004">Personnel &amp; Station Setup</text>
+      <text x="505" y="1072">Request Decision &amp;</text>
+      <text x="505" y="1114">Cover Assignment</text>
+      <!-- Head Guard → System -->
+      <text x="1650" y="234">Attendance Report</text>
+      <text x="1695" y="316">Duty Request &amp;</text>
+      <text x="1695" y="358">Cover Offer</text>
+      <!-- System → Head Guard -->
+      <text x="1770" y="740">Published Schedule</text>
+      <text x="1770" y="784">&amp; Duty Roster</text>
+      <text x="1840" y="884">Notification</text>
+      <!-- System → Security Personnel -->
+      <text x="1820" y="984">Published Schedule</text>
+      <text x="1750" y="1084">Notification</text>
+      <!-- Security Personnel → System -->
+      <text x="1675" y="1544">Preferred Stations</text>
+      <text x="1615" y="1654">Duty Request &amp; Cover Offer</text>
+      <!-- System ↔ AI Service -->
+      <text x="600" y="1314">Absence &amp; Candidate Context</text>
+      <text x="760" y="1604">Ranked Recommendation</text>
+    </g>
+
+  </g>
+</svg>

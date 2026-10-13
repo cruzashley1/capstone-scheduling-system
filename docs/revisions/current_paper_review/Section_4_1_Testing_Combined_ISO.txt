@@ -1,0 +1,78 @@
+4.1 Development and Testing
+
+Unit and Integration Testing
+
+Editing note — Replace the Unit and Integration Testing subsection, including Tables 24 and 25 and their legends, with this excerpt. Continue with your existing Response Time Testing subsection afterward. If using the earlier edited copy, replace its separate Table 24A assessment with the integrated Table 24 below. Remove editing notes before pasting.
+
+Unit and integration testing examined whether the web and mobile applications performed the required scheduling, absence-handling, and duty-management functions. The tables report each test condition, expected behavior, documented actual result, and status. Table 24 also identifies the selected ISO/IEC 25059:2023 quality characteristics relevant to the AI-assisted replacement workflow. This mapping uses testing and observation rather than a separate respondent questionnaire.
+
+Table 24. Unit and Integration Testing for Web Application
+
+
+
+| Test
+Case ID | Component / Module | Test Condition | Expected Behavior | Actual Result | Selected ISO/IEC 25059 Characteristic | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| TC001 | Authentication | Administrator logs in with valid credentials and attempts login with incorrect password | Valid login grants access to the administrator interface; invalid login is refused with no session created | Access granted for valid credentials; access refused for invalid credentials | — | Passed |
+| TC002 | Station Configuration | A station is registered with required personnel and named posts per shift; station is renamed and per-post duty windows are edited | Configuration is saved, employee records update correctly, and duty windows re-stagger with the nine-hour rule enforced | Configuration saved; records updated; duty windows re-staggered correctly; nine-hour rule enforced | — | Passed |
+| TC003 | Schedule Generation | A 15-day period is generated from station configuration and checked for conflicts and rest-day compliance | Daily coverage meets required headcount; no double bookings; rest days observed; shortfalls flagged | Coverage matched requirements; no double bookings; rest days observed; shortfalls flagged | — | Passed |
+| TC004 | Rotation Cycle | Two consecutive rotation cycles are generated | Personnel redistribute across stations; preferred-station shares stay within target; familiar personnel retained | Personnel moved between cycles; shares within target; familiar personnel retained | — | Passed |
+| TC005 | Special Assignment | A guard is pinned to a station at or beyond its required number; pinned assignments that clash with existing schedules are handled | Pinned assignment is honoured with surplus noted; clashing assignments are blocked and resolved through regeneration | Pinned assignment honoured; surplus reported; clashes blocked and resolved | — | Passed |
+| TC006 | Schedule Management | A populated schedule is published; empty schedules are prevented from publishing | Published schedule becomes visible to recipients with notifications; empty schedules are skipped and reported | Schedule published with notifications delivered; empty schedules skipped | — | Passed |
+| TC007 | Absence Handling | An absence is reported; candidates are screened and ranked by AI or rule-based fallback | Ineligible candidates removed; survivors scored on familiarity, type, workload, and availability; AI fallback works when unavailable | Ineligible candidates removed; eligible candidates scored using the scheduling criteria; rule-based ranking remained available under the AI failure conditions tested. | Functional correctness; robustness (replacement workflow) | Passed |
+| TC008 | Leave Management | Leave requests are filed against type caps, lead time, yearly limits, and cooldown rules | All four rules enforced; approved leave excludes guard from generation | All rules enforced; approved leave excluded guard; pending leave scheduled normally | — | Passed |
+| TC009 | Dashboard & Notifications | Dashboard analytics are computed and notifications screen is opened with pending items | Personnel totals and daily statistics are correct; pending counts populate across all tabs | Analytics values correct; all pending counts populated | — | Passed |
+| TC010 | AI Recommendation Explanation | A live AI explanation is compared with the personnel and schedule records supplied for the absence; the AI and fallback displays are inspected. | The explanation agrees with the supplied records, and the display distinguishes AI advice from rule-based fallback. | No separate observation result is documented in the available testing records. | Transparency | Not assessed |
+| TC011 | Administrator Control of AI Advice | The administrator rejects an AI recommendation, selects another eligible guard, and cancels a separate assignment attempt. | The confirmed eligible choice is applied; no assignment occurs before confirmation; cancellation leaves the assignment unchanged. | No separate observation result is documented for rejection, alternative selection, or cancellation. | User controllability | Not assessed |
+
+Legend: Passed — the reported actual result met the expected behavior for the tested case. Failed — the recorded actual result did not meet the expected behavior. Not assessed — a separate observation result has not yet been documented. A dash (—) means that no ISO/IEC 25059 characteristic is assigned to that row within this selected AI assessment.
+
+TC007 provides reported evidence for rule-based eligibility screening and preservation of the replacement workflow under the AI failure conditions tested. It does not establish that the live model selects the best eligible guard. TC010 and TC011 identify further observations needed for explanation accuracy and administrator control. Their expected behaviors are test criteria, not completed findings. These outcomes are reported separately from the ISO/IEC 25010 questionnaire ratings.
+
+Editing note — TC010 and TC011 are proposed additional checks in the same web testing table. Record their actual outcomes, dates, test inputs, system version, and screenshot or log references before changing their status. Identify whether each AI response was live, simulated, cached, or unavailable. No new tests were executed to prepare this excerpt.
+
+Unit and Integration Testing — Mobile Application
+
+Table 25. Unit and Integration Testing for Mobile Application
+
+
+
+| Test
+Case ID | Component / Module | Test Condition | Expected Behavior | Actual Result | Status |
+| --- | --- | --- | --- | --- | --- |
+| TC001 | Authentication | Security Personnel and Head Guard log in with issued credentials; user changes password from mobile app | Access granted with role-based interface loaded; new password takes effect on next login | Security Personnel and Head Guard interfaces loaded correctly; password change reflected on next login | Passed |
+| TC002 | Schedule Viewing | Guard opens assigned bi-weekly schedule and past schedule periods; duty window and stagger ladder are rendered | Dates, duty hours, station, and post displayed for each duty; archived periods accessible; stagger ladder and duty window rendered | Current and past schedules displayed correctly; duty windows and stagger ladders rendered accurately across all entries | Passed |
+| TC003 | Duty Status | Guard opens application at various times relative to duty hours; Today's Duty card renders at phone width | Duty status computed correctly from server clock; card renders in all statuses without overflow | [Record the observed duty-status and phone-layout outcome after checking the test evidence.] | Needs verification |
+| TC004 | Absence Request | Guard files emergency absence before duty begins; attempts to file after duty has ended | A valid emergency absence request filed before duty begins is accepted; filing after the duty has ended is refused with a clear reason. | Emergency absence filed successfully; late filing blocked with clear reason provided | Passed |
+| TC005 | Leave Request | Guard files leave request that breaches a rule; guard files valid leave request | Breach refused with named rule; valid request accepted and appears as pending | All rule violations correctly identified and explained; valid requests accepted and tracked as pending | Passed |
+| TC006 | Day-off Request | Guard requests specific day off for a period not yet scheduled | Request filed against the correct period | [Record whether the day-off request was saved against the correct unscheduled period after checking the test evidence.] | Needs verification |
+| TC007 | Cover Availability & Assignment | Guard declares availability to cover a rest-day duty; receives short-notice cover assignment | Cover offer recorded and boosts replacement ranking; notification states station, post, adjusted hours, and report time | Cover availability recorded; ranking updated; notifications delivered with complete duty details | Passed |
+| TC008 | Station Overview | Head Guard opens daily roster of assigned station | Personnel on duty for the shift listed with assigned posts | Daily roster displayed with all on-duty personnel and their assigned posts | Passed |
+| TC009 | Attendance Reporting | Day and Night Head Guards file attendance reports; duplicate submissions are attempted | Day scope covers morning and afternoon; night scope covers night shift only; duplicate submissions prevented | Day reports filed for morning and afternoon shifts; night reports filed for night shift only; duplicate submissions blocked | Passed |
+| TC010 | Notifications | Schedule is published while guard is logged in; decision is made on filed request | Notification received and opens published schedule; guard notified of request decision | Schedule notifications delivered and navigable; request decision notifications received promptly | Passed |
+
+Legend: Passed — the reported actual result met the expected behavior for the tested case. Failed — the recorded actual result did not meet the expected behavior. Needs verification — the existing result entry does not establish the outcome for the stated scenario and must be checked against the test evidence.
+
+Editing note — In the supplied paper, mobile TC003 repeats the schedule-viewing result and TC006 repeats the leave-request result, although both were marked Passed. Their actual outcomes are left for verification here. TC004’s expected behavior has been corrected to match the absence-request scenario, and TC0010 has been corrected to TC010. Other mobile results are retained as reported. Fill the bracketed cells using the actual test records before submitting the paper.
+
+Necessary related wording
+
+These are short additions for the method and reference. The main replacement excerpt ends after Table 25 above.
+
+Chapter III — 3.7 Evaluation Procedure
+
+Add under “Evaluation Instrument”, after the paragraph describing the existing Google Forms questionnaire. If your current copy already contains “AI Testing and Observation”, use this wording there once.
+
+The ISO/IEC 25010-based questionnaire remains the instrument for the respondent evaluation. A supplementary assessment maps documented unit and integration test results and researcher observations to selected ISO/IEC 25059:2023 quality characteristics: functional correctness, robustness, transparency, and user controllability (International Organization for Standardization [ISO] & International Electrotechnical Commission [IEC], 2023). These characteristics are identified in the existing web application testing table in Chapter IV, together with the relevant test conditions, expected behaviors, actual results, and statuses.
+
+For each assessed case, the researchers compare the actual behavior with a predefined expected outcome and retain the test inputs, observer, execution date, system version, and supporting screenshots or logs. The record distinguishes live AI responses from simulated, cached, or unavailable responses. A behavior without a documented observation remains Not assessed. The AI-related findings are interpreted descriptively and are not combined with the questionnaire means. This procedure does not require another respondent questionnaire or an additional ISO/IEC 25059 rating scale.
+
+References
+
+Add this entry if it is not already present.
+
+International Organization for Standardization, & International Electrotechnical Commission. (2023). Software engineering — Systems and software Quality Requirements and Evaluation (SQuaRE) — Quality model for AI systems (ISO/IEC Standard No. 25059:2023). https://www.iso.org/standard/80655.html
+
+Consistency checks for the earlier edited copy
+
+Remove the separate Table 24A and its list-of-tables entry. Change any remaining references to that assessment to Table 24. Keep the existing ISO/IEC 25010 questionnaire, respondents, and survey-result tables. In Section 3.7, use “six selected characteristics” for the existing six-item ISO/IEC 25010 list. Keep Chapter V statements about pending observations until the actual results are documented. Refresh page numbers after pasting.

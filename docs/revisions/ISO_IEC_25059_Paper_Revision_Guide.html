@@ -1,0 +1,148 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>ISO/IEC 25059 Paper Revision Guide</title><style>
+@page{size:A4;margin:16mm 18mm}body{margin:0;color:#18242c;font:11.5pt/1.16 "Times New Roman",serif}section{break-after:page}section:last-child{break-after:auto}h1{font:700 18pt Calibri,Arial,sans-serif;color:#173d50;margin:0 0 10pt}h2{font:700 12.5pt Calibri,Arial,sans-serif;color:#173d50;margin:10pt 0 5pt;break-after:avoid}p{margin:0 0 7pt}.note{font:9.5pt/1.16 Calibri,Arial,sans-serif;background:#edf4f8;color:#36586b;padding:4pt 6pt}table{border-collapse:collapse;width:100%;table-layout:fixed;margin:6pt 0 9pt;font:10pt/1.12 Calibri,Arial,sans-serif}td,th{border:0.5pt solid #d5dee5;padding:5pt;vertical-align:top;overflow-wrap:anywhere}th{background:#173d50;color:white;text-align:left}tr:nth-child(even){background:#f2f6f8}tr{break-inside:avoid}thead{display:table-header-group}.running{font:8pt Calibri,Arial,sans-serif;color:#607582;margin:0 0 12pt}
+</style></head><body>
+<section><div class="running">ISO/IEC 25059:2023 | PAPER REVISION GUIDE</div>
+<h1>Paper revision guide</h1>
+<p class="note">ISO/IEC 25059:2023 • Testing and observation • Prepared 28 September 2026</p>
+<p>A Scheduling and Duty Management System with AI Application in Absence Handling<br>Kaizen Security Agency Corp.</p>
+<h2>What this revision changes</h2>
+<p>Add a supplementary assessment of the AI-assisted absence-handling feature through documented testing and observation. Retain the existing ISO/IEC 25010-based questionnaire, respondents, statistical treatment, and verified survey results. No additional ISO/IEC 25059 respondent questionnaire is proposed.</p>
+<h2>Where to add or change text</h2>
+<table><colgroup><col style="width:31%"><col style="width:57%"><col style="width:12%"></colgroup><thead><tr>
+<th>Paper location</th><th>Action</th><th>Guide page</th></tr></thead><tbody>
+<tr><td>Chapter I: Scope and Delimitations</td><td>Add one paragraph describing the AI assessment and its limits.</td><td>2</td></tr>
+<tr><td>Chapter II: Evaluation framework</td><td>Add a short discussion of ISO/IEC 25059 and cite the standard.</td><td>2</td></tr>
+<tr><td>Chapter III: Methodology</td><td>Add the assessment method, observation record, scenarios, and analysis. Keep the existing survey method.</td><td>3–4</td></tr>
+<tr><td>Chapter IV: Section 4.3, Development and Testing</td><td>Add an AI quality-assessment subsection before Section 4.4. Retain the survey-result tables.</td><td>5</td></tr>
+<tr><td>Chapter V: Findings, conclusions, recommendations</td><td>Add the three short passages provided. The abstract addition is optional.</td><td>6</td></tr>
+<tr><td>Appendices and references</td><td>Add the observation record and standard reference; renumber as needed.</td><td>7–8</td></tr>
+</tbody></table>
+<h2>How to use this document</h2>
+<p>Copy the manuscript passages and adapt heading, table, and appendix numbers to your final paper. Blue notes are editing instructions, not manuscript text. Bracketed fields require actual study information. Expected results in the proposed scenario table are test criteria, not findings.</p>
+<p class="note">Source limitation: the workspace contains drafts of Chapters I, IV, and V, preliminary pages, and presentation files. Chapter III and the complete final manuscript were not available. Chapter III text is therefore a new insertion, not a tracked replacement of your original wording. Some local drafts contain unfinished survey tables; retain the verified results from your final paper.</p>
+<p class="note">No new testing was performed for this revision. Chapter IV passages identify findings already reported in your draft and the evidence still needed. This package is an edited excerpt guide; it does not replace your complete paper.</p>
+</section>
+<section><div class="running">ISO/IEC 25059:2023 | PAPER REVISION GUIDE</div>
+<h1>Chapter I and Chapter II additions</h1>
+<p class="note">COPY the passages below. Add them at the stated locations; keep the four existing project objectives.</p>
+<h2>Chapter I — Scope of the Study</h2>
+<p class="note">ADD after the current Scope paragraph describing the platform and Gemini integration, before the feature list.</p>
+<p>The evaluation covers both the overall software and the AI-assisted absence-handling feature. The existing ISO/IEC 25010-based questionnaire assesses the respondents’ ratings of the developed system. A supplementary technical assessment uses selected applicable ISO/IEC 25059:2023 quality characteristics to organize evidence from system testing and observation. This assessment focuses on functional correctness, robustness, transparency, and user controllability in the replacement-recommendation workflow. It uses test records and observed system behavior, without administering another questionnaire.</p>
+<h2>Chapter I — Delimitations</h2>
+<p class="note">ADD after the paragraph stating that the AI is advisory and the administrator confirms the assignment.</p>
+<p>The AI quality assessment is limited to the selected characteristics, recorded scenarios, and system version examined. It does not establish full conformity with ISO/IEC 25059, demonstrate that AI recommendations are superior to rule-based ranking, or establish long-term operational benefits. Functional adaptability is outside the implemented evaluation scope because the project does not train or update the model from administrator decisions. Intervenability and societal and ethical risk mitigation are not separately established by this assessment; routine administrator confirmation alone does not demonstrate every aspect of these characteristics.</p>
+<h2>Chapter II — Quality Framework for the AI Component</h2>
+<p class="note">ADD under the discussion of software evaluation standards, immediately after the existing ISO/IEC 25010 discussion. If your school places this material in Chapter III, use it there once.</p>
+<p>ISO/IEC 25059:2023 presents a quality model for AI systems within the Systems and Software Quality Requirements and Evaluation (SQuaRE) family. It supplies concepts for defining and evaluating AI quality (International Organization for Standardization [ISO] &amp; International Electrotechnical Commission [IEC], 2023). In this study, the model provides a framework for examining the AI-assisted replacement workflow through recorded behavior. The selected characteristics guide what the researchers examine, while the project’s scheduling requirements determine the expected outcomes of individual test cases.</p>
+<p>The assessment links functional correctness to compliance with independently checked eligibility requirements, robustness to preservation of required behavior under changed or adverse conditions, transparency to the information available for reviewing a recommendation, and user controllability to the administrator’s ability to determine the final assignment. These are study-specific applications of the selected characteristics. The observation record and pass criteria are designed for this project and are not presented as an official ISO questionnaire or scoring system.</p>
+</section>
+<section><div class="running">ISO/IEC 25059:2023 | PAPER REVISION GUIDE</div>
+<h1>Chapter III — Assessment method</h1>
+<p class="note">ADD after the existing evaluation procedure or testing-method discussion. This text supplements the existing questionnaire method.</p>
+<h2>Supplementary Assessment of the AI-Assisted Feature</h2>
+<p>The study retains its descriptive-quantitative evaluation of respondent ratings through the existing ISO/IEC 25010-based instrument. The AI-assisted absence-handling feature is also examined through a supplementary technical assessment guided by selected ISO/IEC 25059:2023 quality characteristics. This component maps documented development-test results to functional correctness, robustness, transparency, and user controllability (ISO &amp; IEC, 2023). Existing results are identified as previously reported evidence. Where the available records are insufficient, additional observations are required before a finding can be stated.</p>
+<p>The unit of analysis for the supplementary assessment is a recorded test execution of the replacement workflow. It is distinct from an individual questionnaire response. The researchers act as test observers and compare actual behavior with expected behavior defined from the agency’s requirements. The existing IT expert and end-user sample remains the sample for the questionnaire; these respondents are not automatically treated as observers or participants in additional AI tests.</p>
+<h2>Observation Record and Evidence</h2>
+<p>The instrument for this component is a structured test and observation record. Each record identifies the quality characteristic, scenario, input conditions, expected result, actual result, evidence reference, observer, execution date, and system version. The record also distinguishes live AI responses, simulated AI responses, rule-based fallback, and cached responses. Screenshots, output records, and test logs provide supporting evidence. The appendix provides the record format.</p>
+<p>Expected eligibility is checked independently against the personnel, leave, absence, shift, post, and schedule records used in the test. The system-generated shortlist alone is not treated as proof that a guard is eligible. A recommendation is assessed against these constraints, while any claim that it is the best recommendation requires an additional, explicitly defined comparison method.</p>
+<h2>Assessment Scope</h2>
+<p>The supplementary assessment addresses the implemented workflow surrounding the AI service as well as the recommendations and explanations it presents. Simulated responses can test validation, fallback, caching, and decision recording. They cannot establish the quality of recommendations generated by the live AI service. Live recommendations and their explanations therefore require their own recorded observations when conclusions about model output are drawn.</p>
+<p class="note">Editing note: this wording describes a supplementary mapping of existing tests. Do not state that ISO/IEC 25059 guided the original test design unless that is supported by your study records. If you perform additional tests, record their actual dates and add their results to Chapter IV.</p>
+</section>
+<section><div class="running">ISO/IEC 25059:2023 | PAPER REVISION GUIDE</div>
+<h1>Chapter III — Procedure and analysis</h1>
+<p class="note">ADD after the preceding subsection. This table defines proposed scenarios; it does not report completed tests.</p>
+<h2>Test Procedure</h2>
+<p>For each scenario, the researchers specify the expected behavior, prepare controlled test data, execute the workflow, and compare the observed result with the stated criterion. Existing logs may be used when their inputs, version, and outputs are traceable. Missing evidence is identified explicitly. Additional tests use a controlled test environment. For live AI evaluation, the number of independent calls is set before execution and recorded; reopening a cached response is not counted as a new model trial.</p>
+<table><colgroup><col style="width:23%"><col style="width:32%"><col style="width:45%"></colgroup><thead><tr>
+<th>ID / characteristic</th><th>Scenario</th><th>Expected result / observation</th></tr></thead><tbody>
+<tr><td>AI-01<br>Functional correctness</td><td>Request a replacement with independently verified eligible and ineligible guards.</td><td>The shortlist and recommendation satisfy availability, conflict, shift, and post requirements. Record the rule ranking and any AI choice separately.</td></tr>
+<tr><td>AI-02<br>Robustness</td><td>Change an input that affects eligibility or ranking, then reopen the same absence.</td><td>The current candidate context is used. An outdated cached review is not presented as current.</td></tr>
+<tr><td>AI-03<br>Robustness</td><td>Simulate service unavailability, malformed output, and an unknown candidate ID as separate cases.</td><td>Unusable advice is not applied; the eligible rule ranking remains available when valid inputs permit it. Record each failure condition separately.</td></tr>
+<tr><td>AI-04<br>Robustness</td><td>Use missing required data or an empty eligible shortlist.</td><td>The workflow requests correction or reports that no eligible candidate exists; it does not invent or assign an ineligible guard.</td></tr>
+<tr><td>AI-05<br>Transparency</td><td>Inspect a live recommendation, its explanation, and the fallback display.</td><td>The user can distinguish AI advice from fallback. Stated reasons agree with the supplied records, and relevant limitations are communicated.</td></tr>
+<tr><td>AI-06<br>User controllability</td><td>Review the AI choice, select a different eligible guard, and cancel a separate attempt.</td><td>No assignment occurs before confirmation. The confirmed choice is applied; cancellation leaves the assignment unchanged.</td></tr>
+</tbody></table>
+<h2>Analysis and Interpretation</h2>
+<p>Findings are summarized by characteristic using expected-versus-actual comparisons, defects, and evidence references. A case is marked Met only when its criterion is supported by a recorded execution; Not met identifies a documented deviation; Not assessed identifies an unexecuted case or insufficient evidence. These are project reporting labels. Questionnaire weighted means and Likert interpretations are retained only for the respondent evaluation and are not applied to these test findings.</p>
+<p>Where repeated trials are used, report the number meeting the criterion and the total assessed, together with the conditions and failures. Unassessed cases are reported separately. Results apply to the observed cases and do not constitute a universal AI accuracy or conformity rating.</p>
+</section>
+<section><div class="running">ISO/IEC 25059:2023 | PAPER REVISION GUIDE</div>
+<h1>Chapter IV — Results and discussion</h1>
+<p class="note">ADD at the end of Section 4.3, before Section 4.4 Evaluation Results. Use the next available subsection and table numbers.</p>
+<h2>AI Quality Assessment Guided by ISO/IEC 25059:2023</h2>
+<p>The existing development-test findings were mapped to selected ISO/IEC 25059:2023 quality characteristics to identify the evidence available for the AI-assisted absence-handling feature. This supplementary assessment considers functional correctness, robustness, transparency, and user controllability. The mapping below distinguishes findings already reported in the development-test account from observations still needed to support a broader conclusion.</p>
+<table><colgroup><col style="width:20%"><col style="width:35%"><col style="width:45%"></colgroup><thead><tr>
+<th>Characteristic</th><th>Evidence already described in this chapter</th><th>Interpretation and remaining evidence</th></tr></thead><tbody>
+<tr><td>Functional correctness</td><td>TC020 reports exclusion of ineligible candidates and scoring of the remaining guards.</td><td>Provides reported support for rule-based screening. Attach the test inputs and independent eligibility checks. The quality or superiority of the live AI ranking is not established by this result.</td></tr>
+<tr><td>Robustness</td><td>TC022 reports preservation of the rule ranking when AI advice is unavailable. TC023 reports cache invalidation when the shortlist changes.</td><td>Supports workflow fallback and context handling within recorded conditions. The AI-review harness uses simulated responses; identify the exact conditions exercised and retain their logs.</td></tr>
+<tr><td>Transparency</td><td>The absence-handling discussion describes a recommendation with an explanation.</td><td>Describes an implemented feature. An explanation’s presence does not establish its factual accuracy or usefulness. Record checks of live explanations against source data and the information shown to the administrator.</td></tr>
+<tr><td>User controllability</td><td>The workflow describes administrator confirmation, and TC023 reports recording the decision against the recommendation.</td><td>Provides reported support for decision recording. Add evidence of rejecting advice, selecting another eligible guard, cancellation, and absence of assignment before confirmation.</td></tr>
+</tbody></table>
+<p>The reported fallback behavior indicates that replacement selection can continue through the rule-based workflow under the AI failure conditions exercised. It does not demonstrate that the AI model itself remains accurate during these conditions. Similarly, tests of cache handling and decision recording establish properties of the surrounding software rather than the quality of live model reasoning.</p>
+<p>The available account therefore provides partial evidence for the selected characteristics. Stronger conclusions about live recommendations, explanations, and administrator control require the corresponding observation records. No overall ISO/IEC 25059 score is calculated. The ISO/IEC 25010 respondent ratings remain a separate source of evidence concerning the respondents’ assessment of the system.</p>
+<p class="note">Before submission: retain TC020–TC023 only if these IDs still match your final test table. Attach the underlying records, and replace descriptions of pending observations only after those observations are completed. This table adds no new pass counts or measured scores.</p>
+</section>
+<section><div class="running">ISO/IEC 25059:2023 | PAPER REVISION GUIDE</div>
+<h1>Chapter V and abstract additions</h1>
+<p class="note">COPY the applicable passages below. Keep your verified survey findings and existing operational limitations.</p>
+<h2>Summary of Findings — AI Quality Assessment</h2>
+<p class="note">ADD under Section 5.1.5 On Testing and System Quality, after the existing testing findings. Renumber findings if necessary.</p>
+<p>A supplementary mapping of the development-test account to selected ISO/IEC 25059:2023 quality characteristics identified reported evidence for candidate screening, fallback to rule-based ranking, cache invalidation, and recording of administrator decisions. These findings concern the tested replacement workflow. The available account does not yet establish the quality of live AI recommendations and explanations or fully document the administrator’s rejection and cancellation actions. These aspects require the corresponding observation records before a complete finding can be reported for each selected characteristic.</p>
+<h2>Conclusions — AI Quality</h2>
+<p class="note">ADD to Section 5.2, following the existing conclusion on AI-assisted absence handling.</p>
+<p>The reported testing supports the use of an advisory AI component within a workflow that screens candidates through rules and records the administrator’s decision. The ISO/IEC 25059-based mapping provides a structured way to describe this evidence and its limits. The present findings support only the behaviors documented in the available test account; they do not establish full conformity with the standard or demonstrate that the AI ranking is better than the rule-based ranking. Conclusions on recommendation quality, explanation accuracy, and user control should be extended only when supported by the additional recorded observations.</p>
+<h2>Recommendations — Continued AI Evaluation</h2>
+<p class="note">ADD to Section 5.3.2, or combine with the existing recommendations on administrator decisions and comparison of AI and rule rankings.</p>
+<p>The researchers and system maintainers should retain a structured observation record for each AI-related test, including the system version, test conditions, expected behavior, actual output, and supporting evidence. Further testing should examine live explanations against the underlying personnel and schedule records, verify that administrators can reject or cancel recommendations, and test changed or incomplete inputs. Live AI recommendations and rule-based rankings should be compared against predefined criteria before claiming that AI improves selection quality. Relevant tests should be repeated after changes to the model, prompt, eligibility rules, or interface.</p>
+<h2>Optional abstract addition</h2>
+<p class="note">ADD after the sentence describing software testing and before the ISO/IEC 25010 survey results. Use once the supplementary mapping is included in Chapters III and IV.</p>
+<p>A supplementary assessment mapped the documented AI-related tests to selected ISO/IEC 25059:2023 quality characteristics, identifying available evidence for the replacement workflow and gaps requiring further observation.</p>
+<p class="note">These passages deliberately describe the current evidence boundary. After completing additional observations, update Chapters IV and V together so that their findings and conclusions agree. Retain the original survey figures; none are recalculated in this guide.</p>
+</section>
+<section><div class="running">ISO/IEC 25059:2023 | PAPER REVISION GUIDE</div>
+<h1>Appendix — Test and observation record</h1>
+<p class="note">ADD as the next available appendix. Duplicate this form for each scenario and execution; it is completed by the test observer.</p>
+<h2>AI-Assisted Absence Handling: Observation Record</h2>
+<table><colgroup><col style="width:35%"><col style="width:65%"></colgroup><thead><tr>
+<th>Record field</th><th>Entry</th></tr></thead><tbody>
+<tr><td>Test ID / execution number</td><td>[AI-01 to AI-06, plus execution number]</td></tr>
+<tr><td>Quality characteristic</td><td>[Selected ISO/IEC 25059 characteristic]</td></tr>
+<tr><td>Execution date / observer</td><td>[Actual date, time, and observer]</td></tr>
+<tr><td>Application version / environment</td><td>[Build or commit; test environment]</td></tr>
+<tr><td>AI configuration / response type</td><td>[Model and prompt version, if applicable; live, simulated, cached, or fallback]</td></tr>
+<tr><td>Scenario / input reference</td><td>[Absence, station, shift, anonymized guards, schedules, availability, and evidence-file reference]</td></tr>
+<tr><td>Independent expected outcome</td><td>[Eligibility checks and expected system behavior established before execution]</td></tr>
+<tr><td>Steps performed</td><td>[Actions needed to reproduce this execution]</td></tr>
+<tr><td>Actual output and observation</td><td>[What actually occurred, including ranking, explanation, or assignment changes]</td></tr>
+<tr><td>Evidence references</td><td>[Screenshot, log, output file, or recording identifiers]</td></tr>
+<tr><td>Finding</td><td>[Met / Not met / Not assessed, with a short justification]</td></tr>
+<tr><td>Defect / follow-up / retest</td><td>[Issue reference, correction, retest date and result, or not applicable]</td></tr>
+</tbody></table>
+<h2>Recording instructions</h2>
+<p>Use expected outcomes as criteria, not as prefilled actual results. Record failed cases as well as successful ones. A screenshot of a displayed recommendation cannot by itself prove eligibility; attach the data used for independent checking. Record each simulated failure separately. Keep a cached response distinct from a new live model response.</p>
+<p>For repeated trials, state the planned number of independent calls and report the actual number assessed. Where live recommendations vary, retain all assessed outputs. A difference in ranking is not automatically an error when more than one candidate meets the predefined requirements.</p>
+<p class="note">All bracketed entries on this page are blank fields for actual observations. They are not study results. Use anonymized test records in any appendix intended for distribution.</p>
+</section>
+<section><div class="running">ISO/IEC 25059:2023 | PAPER REVISION GUIDE</div>
+<h1>Reference and source notes</h1>
+<p class="note">COPY the reference into your bibliography. The remaining source notes are for editing and evidence checking.</p>
+<h2>Reference to add</h2>
+<p>International Organization for Standardization, &amp; International Electrotechnical Commission. (2023). Software engineering — Systems and software Quality Requirements and Evaluation (SQuaRE) — Quality model for AI systems (ISO/IEC Standard No. 25059:2023). https://www.iso.org/standard/80655.html</p>
+<p>First in-text citation: (International Organization for Standardization [ISO] &amp; International Electrotechnical Commission [IEC], 2023). Subsequent citation: (ISO &amp; IEC, 2023). Adapt to your department’s required reference style.</p>
+<h2>Basis for terminology</h2>
+<p>The standard’s official scope and publicly available definitions were checked through ISO’s catalogue and Online Browsing Platform. The selected characteristic names come from that source. The test scenarios, observation form, and interpretation labels in this guide are project-specific proposals; they are not reproduced ISO assessment instruments.</p>
+<p>Official catalogue: https://www.iso.org/standard/80655.html<br>Official preview: https://www.iso.org/obp/ui#iso:std:iso-iec:25059:ed-1:v1:en</p>
+<h2>Local material used to tailor the revisions</h2>
+<table><colgroup><col style="width:48%"><col style="width:52%"></colgroup><thead><tr>
+<th>Source</th><th>Relevant location / use</th></tr></thead><tbody>
+<tr><td>docs/Chapter1_Revised.md</td><td>Sections 1.4 and 1.5: current objectives, scope, and advisory AI boundary.</td></tr>
+<tr><td>docs/Chapter4_Results_and_Discussions.md</td><td>Section 4.2.2 and Section 4.3, TC020–TC023: reported screening, fallback, cache, and decision-recording findings.</td></tr>
+<tr><td>docs/Chapter5_Summary_Conclusions_Recommendations.md</td><td>Sections 5.1.2, 5.1.5, 5.2, and 5.3: findings, conclusions, and follow-up evaluation.</td></tr>
+<tr><td>backend_python/testing_ai_review.py</td><td>Inspection confirms that the harness substitutes simulated responses for Gemini. It was not executed for this revision.</td></tr>
+<tr><td>presentation/Capstone_Defense_Presentation.pptx and presentation/Speaker_Notes.md</td><td>Context for the existing questionnaire evaluation and differences between local drafts and the final manuscript.</td></tr>
+</tbody></table>
+<h2>Final editing checks</h2>
+<p>Match subsection, table, appendix, and test-case numbers to the final manuscript. Preserve the standard edition already used for the existing ISO/IEC 25010 instrument. Keep survey means separate from test observations. Fill bracketed fields only with recorded information, and keep future work in future tense. Claims about the tests should be traceable to the relevant logs or observations.</p>
+</section>
+</body></html>

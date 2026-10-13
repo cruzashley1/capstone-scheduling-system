@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1700" width="2400" height="1700" role="img" aria-label="Data Flow Diagram Level 1, sheet 1 of 3: User Management, Security Personnel Management and Station Management.">
+  <defs>
+    <marker id="ar" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#0B0B0C"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="2400" height="1700" fill="#FFFFFF"/>
+
+  <g font-family="'Segoe UI','Nunito Sans','Trebuchet MS',system-ui,sans-serif" fill="#0B0B0C">
+
+    <text x="1200" y="102" font-size="62" font-weight="700" text-anchor="middle">Data Flow Diagram Level 1</text>
+
+    <!-- ── Shapes ───────────────────────────────────────── -->
+    <g fill="none" stroke="#0B0B0C" stroke-width="4">
+      <!-- entities -->
+      <rect x="120" y="300" width="360" height="200"/>
+      <rect x="120" y="790" width="360" height="390"/>
+      <!-- processes -->
+      <rect x="950" y="300"  width="400" height="260" rx="40"/>
+      <line x1="950" y1="368" x2="1350" y2="368"/>
+      <rect x="950" y="800"  width="400" height="260" rx="40"/>
+      <line x1="950" y1="868" x2="1350" y2="868"/>
+      <rect x="950" y="1260" width="400" height="300" rx="40"/>
+      <line x1="950" y1="1328" x2="1350" y2="1328"/>
+      <!-- data stores -->
+      <rect x="1660" y="320"  width="620" height="110"/><line x1="1790" y1="320"  x2="1790" y2="430"/>
+      <rect x="1660" y="800"  width="620" height="110"/><line x1="1790" y1="800"  x2="1790" y2="910"/>
+      <rect x="1660" y="1280" width="620" height="110"/><line x1="1790" y1="1280" x2="1790" y2="1390"/>
+      <rect x="1660" y="1470" width="620" height="110"/><line x1="1790" y1="1470" x2="1790" y2="1580"/>
+    </g>
+
+    <!-- entity labels -->
+    <g font-size="46" text-anchor="middle">
+      <text x="300" y="378">Security</text>
+      <text x="300" y="433">Personnel</text>
+      <text x="300" y="1000">Administrator</text>
+    </g>
+
+    <!-- process labels -->
+    <g text-anchor="middle">
+      <text x="1150" y="348"  font-size="40">1.0</text>
+      <text x="1150" y="448"  font-size="42">User</text>
+      <text x="1150" y="502"  font-size="42">Management</text>
+      <text x="1150" y="848"  font-size="40">2.0</text>
+      <text x="1150" y="928"  font-size="40">Security</text>
+      <text x="1150" y="973"  font-size="40">Personnel</text>
+      <text x="1150" y="1018" font-size="40">Management</text>
+      <text x="1150" y="1308" font-size="40">3.0</text>
+      <text x="1150" y="1425" font-size="42">Station</text>
+      <text x="1150" y="1478" font-size="42">Management</text>
+    </g>
+
+    <!-- data store labels -->
+    <g text-anchor="middle">
+      <text x="1725" y="392"  font-size="44">D3</text><text x="2035" y="392"  font-size="42">Auth Accounts tbl</text>
+      <text x="1725" y="872"  font-size="44">D1</text><text x="2035" y="872"  font-size="44">Employees tbl</text>
+      <text x="1725" y="1352" font-size="44">D2</text><text x="2035" y="1352" font-size="44">Stations tbl</text>
+      <text x="1725" y="1542" font-size="44">D4</text><text x="2035" y="1542" font-size="40">Special Assignments tbl</text>
+    </g>
+
+    <!-- ── Data flows ───────────────────────────────────── -->
+    <g fill="none" stroke="#0B0B0C" stroke-width="4" marker-end="url(#ar)">
+      <polyline points="950,330 480,330"/>
+      <polyline points="480,380 950,380"/>
+      <polyline points="480,820 620,820 620,470 950,470"/>
+      <polyline points="1350,345 1660,345"/>
+      <polyline points="1350,405 1660,405"/>
+      <polyline points="1830,430 1830,510 1350,510"/>
+      <polyline points="1150,560 1150,800"/>
+      <polyline points="1280,560 1280,740 2150,740 2150,800"/>
+      <polyline points="480,885 950,885"/>
+      <polyline points="480,950 950,950"/>
+      <polyline points="950,1015 480,1015"/>
+      <polyline points="1350,850 1660,850"/>
+      <polyline points="1830,910 1830,980 1350,980"/>
+      <polyline points="1300,800 1300,680 2020,680 2020,430"/>
+      <polyline points="480,1080 700,1080 700,1330 950,1330"/>
+      <polyline points="480,1145 660,1145 660,1420 950,1420"/>
+      <polyline points="1350,1320 1660,1320"/>
+      <polyline points="1830,1390 1830,1440 1350,1440"/>
+      <polyline points="1350,1520 1660,1520"/>
+    </g>
+
+    <!-- ── Flow labels ──────────────────────────────────── -->
+    <g font-size="32" text-anchor="middle">
+      <text x="715" y="312">First Log-in Setup</text>
+      <text x="715" y="414">Username and</text>
+      <text x="715" y="450">Password</text>
+      <text x="855" y="452">Log-in</text>
+      <text x="1505" y="327">Verify Credentials</text>
+      <text x="1505" y="387">Update Password</text>
+      <text x="1590" y="492">Role and Access</text>
+      <text x="1130" y="690" text-anchor="end">Verified Role</text>
+      <text x="1715" y="722">Preferred Stations</text>
+      <text x="715" y="811">Security Personnel</text>
+      <text x="715" y="847">Type</text>
+      <text x="715" y="932">Crud Operation</text>
+      <text x="715" y="997">Generated ID &amp; Password</text>
+      <text x="1505" y="790">Store Personnel</text>
+      <text x="1505" y="826">Details</text>
+      <text x="1590" y="962">All Security Personnel List</text>
+      <text x="1660" y="662">Register Account</text>
+      <text x="825" y="1284">Station &amp; Post</text>
+      <text x="825" y="1320">Setup</text>
+      <text x="805" y="1402">Special Assignment</text>
+      <text x="1505" y="1302">Store Station Posts</text>
+      <text x="1590" y="1422">Station List</text>
+      <text x="1505" y="1502">Store Assignment</text>
+    </g>
+
+  </g>
+</svg>

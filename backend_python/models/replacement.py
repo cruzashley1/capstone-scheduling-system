@@ -2,7 +2,7 @@
 # Request bodies for the replacement endpoints: reviewing the suggested
 # candidates, and committing the one the admin picked.
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AiReviewRequest(BaseModel):
@@ -21,6 +21,7 @@ class AiReviewRequest(BaseModel):
 
 
 class ReplacementApplyRequest(BaseModel):
+    reason: str = Field(default="", max_length=2000)
     date: str                    # ISO date of the absence, YYYY-MM-DD
     station: str                 # station name (as stored on schedules)
     shift: str                   # 'Morning' | 'Afternoon' | 'Night' | 'HG Day' | 'HG Night'

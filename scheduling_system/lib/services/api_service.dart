@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'session.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
 import 'package:http/http.dart' as http;
 import '../models/absence_request.dart';
 import '../models/cover_offer.dart';
@@ -18,7 +19,43 @@ import '../models/special_assignment.dart';
 import '../models/station.dart';
 import '../models/station_roster.dart';
 
+class _SessionClient extends http.BaseClient {
+  final http.Client _inner = http.Client();
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    if (Session.token != null) {
+      request.headers['Authorization'] = 'Bearer ${Session.token}';
+    }
+    Session.logoutUrl = '${ApiService.baseUrl}/logout';
+    return _inner.send(request);
+  }
+}
+
 class ApiService {
+  static final http.Client _sessionClient = _SessionClient();
+  @visibleForTesting
+  static http.Client? testClient;
+  static http.Client get _client => testClient ?? _sessionClient;
+
+  static Future<Map<String, dynamic>> workflow(String path, {
+    String method = 'GET', Map<String, dynamic>? body,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl$path');
+      final headers = {'Content-Type': 'application/json'};
+      final response = await (switch (method) {
+        'POST' => _client.post(uri, headers: headers, body: jsonEncode(body ?? {})),
+        'PUT' => _client.put(uri, headers: headers, body: jsonEncode(body ?? {})),
+        _ => _client.get(uri),
+      }).timeout(const Duration(seconds: 60));
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200) return {'success': true, ...data};
+      return {'success': false, 'error': data['detail']?.toString() ?? 'Request failed.'};
+    } catch (e) {
+      return {'success': false, 'error': friendlyError(e.toString())};
+    }
+  }
+
   // The deployed API, passed in whole at build time:
   //   flutter build apk --release \
   //     --dart-define=API_BASE_URL=https://YOUR-SERVICE.onrender.com
@@ -60,7 +97,7 @@ class ApiService {
     required String password,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse("$baseUrl/verify-password"),
             headers: {"Content-Type": "application/json"},
@@ -84,7 +121,7 @@ class ApiService {
   // less accurate the longer the round trip takes.
   static Future<Map<String, dynamic>> fetchServerTime() async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/server-time"))
           .timeout(const Duration(seconds: 8));
 
@@ -121,7 +158,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> testConnection() async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/test-connection"))
           .timeout(const Duration(seconds: 10));
 
@@ -156,7 +193,7 @@ class ApiService {
     List<String> preferredStations = const [],
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/employees"),
         headers: {"Content-Type": "application/json"},
@@ -213,7 +250,7 @@ class ApiService {
       if (type != null) body["type"] = type.name;
       if (isActive != null) body["isActive"] = isActive;
 
-      final response = await http
+      final response = await _client
           .put(
         Uri.parse("$baseUrl/employees/$id"),
         headers: {"Content-Type": "application/json"},
@@ -246,7 +283,7 @@ class ApiService {
   // Returns success status and the user's role upon successful authentication.
   static Future<Map<String, dynamic>> login(String username, String password) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         // Adjust the endpoint if your FastAPI route is named differently
         Uri.parse("$baseUrl/login"),
@@ -261,6 +298,7 @@ class ApiService {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
+        await Session.setToken(data["token"] as String?);
         return {
           "success": true,
           // Make sure your FastAPI backend actually returns a "role" field!
@@ -299,7 +337,7 @@ class ApiService {
     required String newPassword,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/change-password"),
         headers: {"Content-Type": "application/json"},
@@ -314,6 +352,7 @@ class ApiService {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
+        await Session.setToken(data["token"] as String?);
         return {"success": true};
       } else {
         return {
@@ -338,7 +377,7 @@ class ApiService {
   // to replace it on their next login.
   static Future<Map<String, dynamic>> resetEmployeePassword(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse("$baseUrl/employees/$id/reset-password"),
             headers: {"Content-Type": "application/json"},
@@ -371,7 +410,7 @@ class ApiService {
     required List<String> preferredStations,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/confirm-stations"),
         headers: {"Content-Type": "application/json"},
@@ -406,7 +445,7 @@ class ApiService {
   // Deletes an employee record (and their login credential).
   static Future<Map<String, dynamic>> deleteEmployee(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .delete(Uri.parse("$baseUrl/employees/$id"))
           .timeout(const Duration(seconds: 10));
 
@@ -431,7 +470,7 @@ class ApiService {
   // Employee List screen.
   static Future<Map<String, dynamic>> fetchEmployees() async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/employees"))
           .timeout(const Duration(seconds: 10));
 
@@ -461,7 +500,7 @@ class ApiService {
   // right after login (the username doubles as the document ID).
   static Future<Map<String, dynamic>> fetchEmployee(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/employees/$id"))
           .timeout(const Duration(seconds: 10));
 
@@ -488,7 +527,7 @@ class ApiService {
   // duty days from rest days.
   static Future<Map<String, dynamic>> fetchEmployeeSchedule(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/employees/$id/schedule"))
           .timeout(const Duration(seconds: 30));
 
@@ -530,7 +569,7 @@ class ApiService {
       final uri = Uri.parse("$baseUrl/employees/$id/station-overview")
           .replace(queryParameters: date == null ? null : {'date': date});
       final response =
-          await http.get(uri).timeout(const Duration(seconds: 30));
+          await _client.get(uri).timeout(const Duration(seconds: 30));
 
       final data = jsonDecode(response.body);
 
@@ -569,7 +608,7 @@ class ApiService {
     List<PostTime> nightPostTimes = const [],
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/stations"),
         headers: {"Content-Type": "application/json"},
@@ -670,7 +709,7 @@ class ApiService {
         };
       }
 
-      final response = await http
+      final response = await _client
           .put(
         Uri.parse("$baseUrl/stations/$id"),
         headers: {"Content-Type": "application/json"},
@@ -699,7 +738,7 @@ class ApiService {
   // Deletes a station (and every schedule generated for it).
   static Future<Map<String, dynamic>> deleteStation(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .delete(Uri.parse("$baseUrl/stations/$id"))
           .timeout(const Duration(seconds: 15));
 
@@ -743,7 +782,7 @@ class ApiService {
     String? stationId,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/schedules/generate"),
         headers: {"Content-Type": "application/json"},
@@ -814,7 +853,7 @@ class ApiService {
   // dates being pinned — pinning them strands that station's roster.
   static Future<Map<String, dynamic>> fetchDutyStatus(String cycleId) async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse(
               "$baseUrl/special-assignments/duty-status?cycleId=$cycleId"))
           .timeout(const Duration(seconds: 20));
@@ -848,7 +887,7 @@ class ApiService {
   // Fetches every stored schedule, used by Schedule Management.
   static Future<Map<String, dynamic>> fetchSchedules() async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/schedules"))
           .timeout(const Duration(seconds: 30));
 
@@ -876,7 +915,7 @@ class ApiService {
   // Marks one schedule as published.
   static Future<Map<String, dynamic>> publishSchedule(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .post(Uri.parse("$baseUrl/schedules/$id/publish"))
           .timeout(const Duration(seconds: 15));
 
@@ -902,7 +941,7 @@ class ApiService {
     required String post,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .put(
             Uri.parse("$baseUrl/schedules/$scheduleId/posts"),
             headers: {"Content-Type": "application/json"},
@@ -945,7 +984,7 @@ class ApiService {
     String? relieverId,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .put(
             Uri.parse("$baseUrl/schedules/$scheduleId/assignment"),
             headers: {"Content-Type": "application/json"},
@@ -987,7 +1026,7 @@ class ApiService {
     List<String> offDates = const [],
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse("$baseUrl/schedules/$scheduleId/employees"),
             headers: {"Content-Type": "application/json"},
@@ -1016,7 +1055,7 @@ class ApiService {
   // Reverts one schedule back to unpublished.
   static Future<Map<String, dynamic>> unpublishSchedule(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .post(Uri.parse("$baseUrl/schedules/$id/unpublish"))
           .timeout(const Duration(seconds: 15));
 
@@ -1038,7 +1077,7 @@ class ApiService {
   // an unpublished draft).
   static Future<Map<String, dynamic>> deleteSchedule(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .delete(Uri.parse("$baseUrl/schedules/$id"))
           .timeout(const Duration(seconds: 15));
 
@@ -1059,7 +1098,7 @@ class ApiService {
   // or 'all'. Returns how many documents were removed.
   static Future<Map<String, dynamic>> deleteSchedules(String scope) async {
     try {
-      final response = await http
+      final response = await _client
           .delete(Uri.parse("$baseUrl/schedules?status=$scope"))
           .timeout(const Duration(seconds: 30));
 
@@ -1079,7 +1118,7 @@ class ApiService {
   // Marks every unpublished schedule as published.
   static Future<Map<String, dynamic>> publishAllSchedules() async {
     try {
-      final response = await http
+      final response = await _client
           .post(Uri.parse("$baseUrl/schedules/publish-all"))
           .timeout(const Duration(seconds: 30));
 
@@ -1112,7 +1151,7 @@ class ApiService {
     required List<AttendanceRecord> records,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/attendance-reports"),
         headers: {"Content-Type": "application/json"},
@@ -1151,7 +1190,7 @@ class ApiService {
   // Today) and Absent Management screens.
   static Future<Map<String, dynamic>> fetchAttendanceReports() async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/attendance-reports"))
           .timeout(const Duration(seconds: 15));
 
@@ -1180,7 +1219,7 @@ class ApiService {
   // Marks one report's notification as read.
   static Future<Map<String, dynamic>> markReportRead(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .post(Uri.parse("$baseUrl/attendance-reports/$id/read"))
           .timeout(const Duration(seconds: 10));
 
@@ -1200,7 +1239,7 @@ class ApiService {
   // Marks every unread report as read ("Mark all as read").
   static Future<Map<String, dynamic>> markAllReportsRead() async {
     try {
-      final response = await http
+      final response = await _client
           .post(Uri.parse("$baseUrl/attendance-reports/read-all"))
           .timeout(const Duration(seconds: 15));
 
@@ -1223,7 +1262,7 @@ class ApiService {
   // the Schedule Report's Absence & Substitution Log.
   static Future<Map<String, dynamic>> fetchReplacements() async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/replacements"))
           .timeout(const Duration(seconds: 15));
 
@@ -1272,7 +1311,7 @@ class ApiService {
         },
       );
       final response =
-          await http.get(uri).timeout(const Duration(seconds: 30));
+          await _client.get(uri).timeout(const Duration(seconds: 30));
 
       final data = jsonDecode(response.body);
 
@@ -1325,7 +1364,7 @@ class ApiService {
     required String absentEmployeeId,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
             Uri.parse("$baseUrl/replacements/ai-review"),
             headers: {"Content-Type": "application/json"},
@@ -1360,9 +1399,10 @@ class ApiService {
     required String replacementEmployeeId,
     String? reportId,
     String? absenceRequestId,
+    String reason = "",
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/replacements/apply"),
         headers: {"Content-Type": "application/json"},
@@ -1375,6 +1415,7 @@ class ApiService {
           "replacementEmployeeId": replacementEmployeeId,
           "reportId": reportId,
           "absenceRequestId": absenceRequestId,
+          "reason": reason,
         }),
       )
           .timeout(const Duration(seconds: 30));
@@ -1401,7 +1442,7 @@ class ApiService {
   static Future<Map<String, dynamic>> fetchEmployeeNotifications(
       String employeeId) async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/employees/$employeeId/notifications"))
           .timeout(const Duration(seconds: 15));
 
@@ -1430,7 +1471,7 @@ class ApiService {
   // Marks one employee notification as read.
   static Future<Map<String, dynamic>> markNotificationRead(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .post(Uri.parse("$baseUrl/notifications/$id/read"))
           .timeout(const Duration(seconds: 10));
 
@@ -1451,7 +1492,7 @@ class ApiService {
   static Future<Map<String, dynamic>> markAllNotificationsRead(
       String employeeId) async {
     try {
-      final response = await http
+      final response = await _client
           .post(Uri.parse(
               "$baseUrl/employees/$employeeId/notifications/read-all"))
           .timeout(const Duration(seconds: 15));
@@ -1473,7 +1514,7 @@ class ApiService {
   // Station Management screen.
   static Future<Map<String, dynamic>> fetchStations() async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/stations"))
           .timeout(const Duration(seconds: 10));
 
@@ -1505,7 +1546,7 @@ class ApiService {
   static Future<Map<String, dynamic>> fetchSpecialAssignments(
       String cycleId) async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/special-assignments?cycleId=$cycleId"))
           .timeout(const Duration(seconds: 10));
 
@@ -1542,7 +1583,7 @@ class ApiService {
     required List<SpecialAssignment> assignments,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .put(
             Uri.parse("$baseUrl/stations/$stationId/special-assignments"),
             headers: {"Content-Type": "application/json"},
@@ -1595,7 +1636,7 @@ class ApiService {
     required String body,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/absence-requests"),
         headers: {"Content-Type": "application/json"},
@@ -1636,7 +1677,7 @@ class ApiService {
   // Notifications screen's Absence Requests tab.
   static Future<Map<String, dynamic>> fetchAbsenceRequests() async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/absence-requests"))
           .timeout(const Duration(seconds: 15));
 
@@ -1667,7 +1708,7 @@ class ApiService {
   static Future<Map<String, dynamic>> fetchEmployeeAbsenceRequests(
       String employeeId) async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/employees/$employeeId/absence-requests"))
           .timeout(const Duration(seconds: 15));
 
@@ -1703,7 +1744,7 @@ class ApiService {
     String decidedBy = 'admin',
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/absence-requests/$id/decision"),
         headers: {"Content-Type": "application/json"},
@@ -1737,7 +1778,7 @@ class ApiService {
   // Marks one absence request as opened by the admin.
   static Future<Map<String, dynamic>> markAbsenceRequestRead(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .post(Uri.parse("$baseUrl/absence-requests/$id/read"))
           .timeout(const Duration(seconds: 10));
 
@@ -1763,7 +1804,7 @@ class ApiService {
   static Future<Map<String, dynamic>> fetchSpecialRequestWindow(
       String employeeId) async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse(
               "$baseUrl/employees/$employeeId/special-request-window"))
           .timeout(const Duration(seconds: 15));
@@ -1807,7 +1848,7 @@ class ApiService {
     required String body,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/special-requests"),
         headers: {"Content-Type": "application/json"},
@@ -1846,7 +1887,7 @@ class ApiService {
   // Every special request, newest first — the admin Special Requests tab.
   static Future<Map<String, dynamic>> fetchSpecialRequests() async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/special-requests"))
           .timeout(const Duration(seconds: 15));
 
@@ -1877,7 +1918,7 @@ class ApiService {
   static Future<Map<String, dynamic>> fetchEmployeeSpecialRequests(
       String employeeId) async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/employees/$employeeId/special-requests"))
           .timeout(const Duration(seconds: 15));
 
@@ -1913,7 +1954,7 @@ class ApiService {
     String decidedBy = 'admin',
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/special-requests/$id/decision"),
         headers: {"Content-Type": "application/json"},
@@ -1947,7 +1988,7 @@ class ApiService {
   // Marks one special request as opened by the admin.
   static Future<Map<String, dynamic>> markSpecialRequestRead(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .post(Uri.parse("$baseUrl/special-requests/$id/read"))
           .timeout(const Duration(seconds: 10));
 
@@ -1979,7 +2020,7 @@ class ApiService {
     required List<String> preferredStations,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/cover-offers"),
         headers: {"Content-Type": "application/json"},
@@ -2018,7 +2059,7 @@ class ApiService {
   static Future<Map<String, dynamic>> fetchEmployeeCoverOffers(
       String employeeId) async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/employees/$employeeId/cover-offers"))
           .timeout(const Duration(seconds: 15));
 
@@ -2053,7 +2094,7 @@ class ApiService {
       final uri = Uri.parse("$baseUrl/cover-offers")
           .replace(queryParameters: {"date": date, "status": status});
       final response =
-          await http.get(uri).timeout(const Duration(seconds: 15));
+          await _client.get(uri).timeout(const Duration(seconds: 15));
 
       final data = jsonDecode(response.body);
 
@@ -2080,7 +2121,7 @@ class ApiService {
   // back if they've already been assigned to cover that day.
   static Future<Map<String, dynamic>> withdrawCoverOffer(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .delete(Uri.parse("$baseUrl/cover-offers/$id"))
           .timeout(const Duration(seconds: 15));
 
@@ -2124,7 +2165,7 @@ class ApiService {
   // hardcoded so the caps live only in backend_python/leave.py.
   static Future<Map<String, dynamic>> fetchLeaveTypes() async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/leave-types"))
           .timeout(const Duration(seconds: 15));
 
@@ -2155,7 +2196,7 @@ class ApiService {
   static Future<Map<String, dynamic>> fetchLeaveWindow(
       String employeeId) async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/employees/$employeeId/leave-window"))
           .timeout(const Duration(seconds: 15));
 
@@ -2205,7 +2246,7 @@ class ApiService {
     required String body,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/leave-requests"),
         headers: {"Content-Type": "application/json"},
@@ -2242,7 +2283,7 @@ class ApiService {
   // the Leave Report both read this.
   static Future<Map<String, dynamic>> fetchLeaveRequests() async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/leave-requests"))
           .timeout(const Duration(seconds: 15));
 
@@ -2267,7 +2308,7 @@ class ApiService {
   static Future<Map<String, dynamic>> fetchEmployeeLeaveRequests(
       String employeeId) async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/employees/$employeeId/leave-requests"))
           .timeout(const Duration(seconds: 15));
 
@@ -2293,7 +2334,7 @@ class ApiService {
   static Future<Map<String, dynamic>> fetchActiveLeaves({String? date}) async {
     try {
       final query = date == null ? '' : '?date=$date';
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/leaves/active$query"))
           .timeout(const Duration(seconds: 15));
 
@@ -2318,7 +2359,7 @@ class ApiService {
   // dialog so nobody approves a 15-day leave blind.
   static Future<Map<String, dynamic>> fetchLeaveImpact(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .get(Uri.parse("$baseUrl/leave-requests/$id/impact"))
           .timeout(const Duration(seconds: 15));
 
@@ -2361,7 +2402,7 @@ class ApiService {
     bool supervisorConfirmed = false,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/leave-requests/$id/decision"),
         headers: {"Content-Type": "application/json"},
@@ -2393,7 +2434,7 @@ class ApiService {
   // Marks one leave request as opened by the admin.
   static Future<Map<String, dynamic>> markLeaveRequestRead(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .post(Uri.parse("$baseUrl/leave-requests/$id/read"))
           .timeout(const Duration(seconds: 10));
 
@@ -2411,7 +2452,7 @@ class ApiService {
   // comes back once it has been approved or denied.
   static Future<Map<String, dynamic>> withdrawLeaveRequest(String id) async {
     try {
-      final response = await http
+      final response = await _client
           .delete(Uri.parse("$baseUrl/leave-requests/$id"))
           .timeout(const Duration(seconds: 15));
 
@@ -2434,7 +2475,7 @@ class ApiService {
     String reason = '',
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/leave-requests/$id/cancel"),
         headers: {"Content-Type": "application/json"},
@@ -2475,7 +2516,7 @@ class ApiService {
     bool supervisorConfirmed = false,
   }) async {
     try {
-      final response = await http
+      final response = await _client
           .post(
         Uri.parse("$baseUrl/employees/$employeeId/leave"),
         headers: {"Content-Type": "application/json"},

@@ -1,0 +1,197 @@
+4.1 Development and Testing
+
+Unit and Integration Testing
+
+Editing note — This updated copy incorporates the additional past test records. Replace the Unit and Integration Testing subsection and Tables 24–25 with this excerpt; continue with Response Time Testing. Remove any earlier separate Table 24A. Keep the evidence notes and unfinished observation sheets as working materials until completed, and remove editing notes before submission.
+
+Unit and integration testing examined whether the web and mobile applications performed the required scheduling, absence-handling, and duty-management functions. The tables report each test condition, expected behavior, documented actual result, and status. Table 24 also identifies the selected ISO/IEC 25059:2023 quality characteristics relevant to the AI-assisted replacement workflow. This mapping uses testing and observation rather than a separate respondent questionnaire.
+
+Table 24. Unit and Integration Testing for Web Application
+
+
+
+| Test
+Case ID | Component / Module | Test Condition | Expected Behavior | Actual Result | Selected ISO/IEC 25059 Characteristic | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| TC001 | Authentication | Administrator logs in with valid credentials and attempts login with incorrect password | Valid login grants access to the administrator interface; invalid login is refused with no session created | Access granted for valid credentials; access refused for invalid credentials | — | Passed |
+| TC002 | Station Configuration | A station is registered with required personnel and named posts per shift; station is renamed and per-post duty windows are edited | Configuration is saved, employee records update correctly, and duty windows re-stagger with the nine-hour rule enforced | Configuration saved; records updated; duty windows re-staggered correctly; nine-hour rule enforced | — | Passed |
+| TC003 | Schedule Generation | A 15-day period is generated from station configuration and checked for conflicts and rest-day compliance | Daily coverage meets required headcount; no double bookings; rest days observed; shortfalls flagged | Coverage matched requirements; no double bookings; rest days observed; shortfalls flagged | — | Passed |
+| TC004 | Rotation Cycle | Two consecutive rotation cycles are generated | Personnel redistribute across stations; preferred-station shares stay within target; familiar personnel retained | Personnel moved between cycles; shares within target; familiar personnel retained | — | Passed |
+| TC005 | Special Assignment | A guard is pinned to a station at or beyond its required number; pinned assignments that clash with existing schedules are handled | Pinned assignment is honoured with surplus noted; clashing assignments are blocked and resolved through regeneration | Pinned assignment honoured; surplus reported; clashes blocked and resolved | — | Passed |
+| TC006 | Schedule Management | A populated schedule is published; empty schedules are prevented from publishing | Published schedule becomes visible to recipients with notifications; empty schedules are skipped and reported | Schedule published with notifications delivered; empty schedules skipped | — | Passed |
+| TC007 | Absence Handling | Report an absence; screen unavailable, on-duty, absent, or shift/post-ineligible guards and rank eligible candidates. (Past record TC020.) | Ineligible guards are excluded; eligible guards are scored using familiarity, personnel type, workload, and declared availability. | The past record reports that eligibility screening and scoring produced the expected replacement shortlist. | Functional correctness (replacement workflow) | Passed |
+| TC008 | Leave Management | Leave requests are filed against type caps, lead time, yearly limits, and cooldown rules | All four rules enforced; approved leave excludes guard from generation | All rules enforced; approved leave excluded guard; pending leave scheduled normally | — | Passed |
+| TC009 | Dashboard & Notifications | Dashboard analytics are computed and notifications screen is opened with pending items | Personnel totals and daily statistics are correct; pending counts populate across all tabs | Analytics values correct; all pending counts populated | — | Passed |
+| TC010 | AI Recommendation Explanation | A live AI explanation is compared with the personnel and schedule records supplied for the absence; the AI and fallback displays are inspected. | The explanation agrees with the supplied records, and the display distinguishes AI advice from rule-based fallback. | Past TC034 supports the null-review display only. Comparison of a live explanation with its exact input records remains undocumented. | Transparency | Not assessed |
+| TC011 | Administrator Control of AI Advice | The administrator rejects an AI recommendation, selects another eligible guard, and cancels a separate assignment attempt. | The confirmed eligible choice is applied; no assignment occurs before confirmation; cancellation leaves the assignment unchanged. | Past TC023 supports direct decision recording. The full select, cancel, and confirm workflow has no documented observation result. | User controllability | Not assessed |
+| TC012 | AI Context Construction | Construct the AI context from the eligible shortlist and inspect its fields and JSON serialization. (Past record TC021.) | The context contains the intended ranking inputs, excludes the specifically checked credential/contact/government-ID fields, and serializes to JSON. | The past record reports a passing context suite. Checked excluded fields were absent and the context was JSON-serializable. Names, employee IDs, and an absence reason can still be included. | Functional correctness (context construction) | Passed |
+| TC013 | AI Unavailability / Fallback | Disable AI review or simulate an enabled reviewer returning no usable review. (Past record TC022.) | No AI recommendation is returned; rule-based suggestions remain available; an unsuccessful review is not cached as a valid recommendation. | The past record reports a passing fallback result. The reviewed script covers disabled review and a simulated unavailable result; it checks candidate count after disabling AI and absence of a cached failed review. | Robustness (AI-assisted workflow) | Passed |
+| TC014 | AI Cache / Decision Record | Reopen a reviewed absence with unchanged ranking inputs, change a candidate's recent cover load, and record a different administrator choice. (Past record TC023.) | Unchanged context reuses the review; relevant input changes request a new review; the recorded administrator choice may differ from the recommendation. | The past record reports cache reuse, invalidation after relevant input changes, and administrator-decision recording. The script checks these through simulated reviews and a direct decision-recording call. | Functional correctness; user controllability (decision record only) | Passed |
+| TC015 | Replacement Preparation Window | Assign short-notice cover after a post has started, and compare a case that requires no preparation adjustment. (Past record TC024.) | Where required, cover hours allow preparation/travel and the notification states adjusted and original post hours; otherwise hours remain unadjusted. | The past record reports correct adjusted cover hours and notification details, with no adjustment when it was unnecessary. | Functional correctness (replacement workflow) | Passed |
+| TC016 | Expired Replacement Window | Attempt cover after the post has ended; compare a post whose cover window is still open. (Past record TC025.) | An ended post is refused with a clear reason, no schedule change, and no replacement notification; an open post remains eligible for cover. | The past record reports refusal of ended posts with no schedule update or notification, while open-window cover remained available. | Functional correctness (replacement workflow) | Passed |
+| TC017 | Find Replacement Window | Open Find Replacement before the cover deadline and attempt to act at or after the deadline. (Past record TC026.) | Replacement selection is available while the cover window is open and closes when the post times out. | The past record reports that the replacement action remained available before the deadline and closed at timeout. | Functional correctness (replacement workflow) | Passed |
+| TC018 | AI Review Panel | Render the AI review panel with no review and with loading complete. (Past record TC034.) | The panel occupies zero space and displays no AI recommendation when no review is available. | The past record reports no panel content and zero layout space for a null review. | Transparency (absence of AI advice) | Passed |
+
+Legend: Passed — the past test record reports an outcome meeting the stated expectation, within the evidence scope noted below; it does not indicate a new execution for this revision. Failed — an observed outcome did not meet the expectation. Not assessed — the complete stated observation has not been documented, even if partial supporting tests exist. A dash (—) means no characteristic is assigned within this selected AI assessment.
+
+TC007 and TC012–TC018 incorporate historical records TC020–TC026 and TC034. They provide reported evidence for screening, context construction, fallback, caching, decision recording, replacement time constraints, and the null-review display. The AI context and review scripts use mock data and simulated responses; the panel tests use supplied test responses. These results do not establish the factual accuracy of a live explanation or the complete administrator interaction. TC010 and TC011 therefore remain Not assessed. Findings are interpreted within each tested scenario and separately from the ISO/IEC 25010 questionnaire means.
+
+Editing note — Original case IDs are retained in the conditions and evidence notes for traceability. Historical execution dates, builds, and raw run logs were not supplied with the additional result rows; recover them from your records or document a new run. Do not substitute the screenshot date for the execution date. Use the observation sheets at the end to complete TC010 and TC011. No new application tests were executed for this document update.
+
+Unit and Integration Testing — Mobile Application
+
+Table 25. Unit and Integration Testing for Mobile Application
+
+
+
+| Test
+Case ID | Component / Module | Test Condition | Expected Behavior | Actual Result | Status |
+| --- | --- | --- | --- | --- | --- |
+| TC001 | Authentication | Security Personnel and Head Guard log in with issued credentials; user changes password from mobile app | Access granted with role-based interface loaded; new password takes effect on next login | Security Personnel and Head Guard interfaces loaded correctly; password change reflected on next login | Passed |
+| TC002 | Schedule Viewing | Guard opens assigned bi-weekly schedule and past schedule periods; duty window and stagger ladder are rendered | Dates, duty hours, station, and post displayed for each duty; archived periods accessible; stagger ladder and duty window rendered | Current and past schedules displayed correctly; duty windows and stagger ladders rendered accurately across all entries | Passed |
+| TC003 | Duty Status | Guard opens application at various times relative to duty hours; Today's Duty card renders at phone width | Duty status computed correctly from server clock; card renders in all statuses without overflow | [Record the observed duty-status and phone-layout outcome after checking the test evidence.] | Needs verification |
+| TC004 | Absence Request | Guard files emergency absence before duty begins; attempts to file after duty has ended | A valid emergency absence request filed before duty begins is accepted; filing after the duty has ended is refused with a clear reason. | Emergency absence filed successfully; late filing blocked with clear reason provided | Passed |
+| TC005 | Leave Request | Guard files leave request that breaches a rule; guard files valid leave request | Breach refused with named rule; valid request accepted and appears as pending | All rule violations correctly identified and explained; valid requests accepted and tracked as pending | Passed |
+| TC006 | Day-off Request | Guard requests specific day off for a period not yet scheduled | Request filed against the correct period | [Record whether the day-off request was saved against the correct unscheduled period after checking the test evidence.] | Needs verification |
+| TC007 | Cover Availability & Assignment | Guard declares availability to cover a rest-day duty; receives short-notice cover assignment | Cover offer recorded and boosts replacement ranking; notification states station, post, adjusted hours, and report time | Cover availability recorded; ranking updated; notifications delivered with complete duty details | Passed |
+| TC008 | Station Overview | Head Guard opens daily roster of assigned station | Personnel on duty for the shift listed with assigned posts | Daily roster displayed with all on-duty personnel and their assigned posts | Passed |
+| TC009 | Attendance Reporting | Day and Night Head Guards file attendance reports; duplicate submissions are attempted | Day scope covers morning and afternoon; night scope covers night shift only; duplicate submissions prevented | Day reports filed for morning and afternoon shifts; night reports filed for night shift only; duplicate submissions blocked | Passed |
+| TC010 | Notifications | Schedule is published while guard is logged in; decision is made on filed request | Notification received and opens published schedule; guard notified of request decision | Schedule notifications delivered and navigable; request decision notifications received promptly | Passed |
+
+Legend: Passed — the reported actual result met the expected behavior for the tested case. Failed — the recorded actual result did not meet the expected behavior. Needs verification — the existing result entry does not establish the outcome for the stated scenario and must be checked against the test evidence.
+
+Editing note — In the supplied paper, mobile TC003 repeats the schedule-viewing result and TC006 repeats the leave-request result, although both were marked Passed. Their actual outcomes are left for verification here. TC004’s expected behavior has been corrected to match the absence-request scenario, and TC0010 has been corrected to TC010. Other mobile results are retained as reported. Fill the bracketed cells using the actual test records before submitting the paper.
+
+Necessary related wording
+
+These are short additions for the method and reference. The main replacement excerpt ends after Table 25 above.
+
+Chapter III — 3.7 Evaluation Procedure
+
+Add under “Evaluation Instrument”, after the paragraph describing the existing Google Forms questionnaire. If your current copy already contains “AI Testing and Observation”, use this wording there once.
+
+The ISO/IEC 25010-based questionnaire remains the instrument for the respondent evaluation. A supplementary assessment maps documented unit and integration test results and researcher observations to selected ISO/IEC 25059:2023 quality characteristics: functional correctness, robustness, transparency, and user controllability (International Organization for Standardization [ISO] & International Electrotechnical Commission [IEC], 2023). These characteristics are identified in the existing web application testing table in Chapter IV, together with the relevant test conditions, expected behaviors, actual results, and statuses.
+
+For each assessed case, the researchers compare the actual behavior with a predefined expected outcome and retain the test inputs, observer, execution date, system version, and supporting screenshots or logs. The record distinguishes live AI responses from simulated, cached, or unavailable responses. A behavior without a documented observation remains Not assessed. The AI-related findings are interpreted descriptively and are not combined with the questionnaire means. This procedure does not require another respondent questionnaire or an additional ISO/IEC 25059 rating scale.
+
+References
+
+Add this entry if it is not already present.
+
+International Organization for Standardization, & International Electrotechnical Commission. (2023). Software engineering — Systems and software Quality Requirements and Evaluation (SQuaRE) — Quality model for AI systems (ISO/IEC Standard No. 25059:2023). https://www.iso.org/standard/80655.html
+
+Consistency checks for the earlier edited copy
+
+Remove the separate Table 24A and its list-of-tables entry. Change any remaining references to that assessment to Table 24. Keep the existing ISO/IEC 25010 questionnaire, respondents, and survey-result tables. In Section 3.7, use “six selected characteristics” for the existing six-item ISO/IEC 25010 list. Keep Chapter V statements about pending observations until the actual results are documented. Refresh page numbers after pasting.
+
+Supporting evidence notes
+
+Working appendix — Give this appendix the next available letter/title only if including it in the paper. Attach the original test records and execution logs with their original case IDs. These notes distinguish historical results from code inspection and pending observations.
+
+User-supplied historical test-table screenshots and inspection of the corresponding local test code. No application tests were executed for this document update.
+
+TC020 → Table 24 TC007 — Absence Handling
+
+Historical scenario result. This establishes the reported screening/scoring outcome, not the quality of a live model's preferred guard. Execution date and build were not supplied with the result.
+
+TC021 → Table 24 TC012 — AI Context Construction
+
+testing_ai_context.py uses a temporary mock database without a model call (18 checks across the suite). Replace the broad 'No personal data' claim: names and IDs remain, and a reason can be included. The field-set assertion rejects extra keys on the first candidate; it does not prove complete field equality for every candidate.
+
+TC022 → Table 24 TC013 — AI Unavailability / Fallback
+
+testing_ai_review.py stubs the model. Its 18 checks also cover caching and decision recording. The supplied row lists missing key, quota, timeout, and malformed output, but this script does not separately inject those failures or compare the complete ranking before and after each failure. Such stronger claims need their own execution evidence.
+
+TC023 → Table 24 TC014 — AI Cache / Decision Record
+
+Same 18-check testing_ai_review.py suite as TC022; do not count it twice as two distinct sets of 18 checks. One model request applies to repeated opens with unchanged ranking context. A changed context can require another call. Direct record_decision() testing does not establish the complete select/cancel/confirm UI workflow.
+
+TC024 → Table 24 TC015 — Replacement Preparation Window
+
+Historical TC024 cites 30 checks. This is supporting replacement-workflow evidence; it is not a live-model reasoning test. Preserve the original run log, date, and build when available.
+
+TC025 → Table 24 TC016 — Expired Replacement Window
+
+Historical TC025 cites 25 checks. The result concerns the application's time-window constraints, not the model's ability to choose a guard. Preserve the original run log, date, and build when available.
+
+TC026 → Table 24 TC017 — Find Replacement Window
+
+Historical TC026 cites 24 cases. Retain its execution evidence; the case total should not be described as live AI trials.
+
+TC034 → Table 24 TC018 — AI Review Panel
+
+ai_review_panel_test.dart contains 17 tests across the whole panel/model suite. The null-review check is one of them, not 17 separate null-review cases. Supplied test responses can establish display behavior but cannot establish factual accuracy of a live explanation.
+
+Record counts
+
+Table 24 contains 18 scenario rows: 16 reported Passed and two Not assessed. Seven reported rows were added; the eighth supplied historical case expands the existing TC007. Scenario rows and script assertions are different units. Do not add the shared 18-check review suite twice or describe all panel tests as null-response tests. Table 25 retains eight reported Passed cases and two results needing verification.
+
+TC010 observation sheet
+
+Check the AI explanation against its inputs
+
+Working test procedure — No outcome has been entered. Expected behaviors and examples below are not test findings.
+
+Setup: Use an isolated test environment with fictitious guards, one absent guard, and at least two rule-eligible alternatives. Use a duty date/time whose cover window is still open. Give the alternatives different, known station familiarity and recent cover counts. Record the build and take a snapshot of the input records.
+
+1. Open the absence's Find Replacement screen. Obtain a fresh live AI review. Record the response source, model/prompt version where available, and the exact context sent to the model. A cached response is not a new live trial; a simulated response is only a display test.
+
+2. Save the raw review and a screenshot of the AI Recommendation panel. Record the recommended and runner-up IDs, rationale, and any risk/trade-off text. Compare the displayed text with the returned review.
+
+3. List each factual claim in the explanation and match it to the context and underlying records. For example, a claim of two recent covers must match coversLast30Days = 2. Claims about rest, availability, or familiarity also need supporting inputs; record unsupported claims as such.
+
+4. Record whether the panel clearly labels AI advice. In a separate run, disable AI or use a controlled unavailable response in the test environment; inspect whether the AI panel disappears and rule-based candidates remain usable. Label this run disabled/simulated/unavailable as appropriate.
+
+5. Complete the observation sheet. Pass only if every applicable criterion is met: supported factual claims, faithful display, clear AI labeling, and usable fallback without a false AI recommendation. An observed mismatch is Failed; a missing live review or missing input capture leaves the relevant part Not assessed.
+
+Evidence to retain: Input/context snapshot; raw review; labeled-panel screenshot; claim-by-claim comparison; disabled/unavailable screenshot; date/time, observer, build, and AI mode for each run.
+
+One successful observation supports that scenario only. For broader evidence, predefine contrasting scenarios and report all their outcomes; no particular sample count is asserted here as an ISO requirement.
+
+Complete after execution
+
+Run ID: __________    Observer: __________
+Execution date/time and time zone: __________
+Build/commit and environment: __________
+Scenario / input record references: __________
+AI mode and response source: __________
+Model / prompt version (if applicable): __________
+Actual outcome for each step: __________
+Evidence file references: __________
+Result: Passed / Failed / Not assessed
+Unexecuted criteria or discrepancies: __________
+
+TC011 observation sheet
+
+Check administrator choice, cancellation, and confirmation
+
+Working test procedure — No outcome has been entered. Expected behaviors and examples below are not test findings.
+
+Setup: Use an isolated test absence with an open cover window, at least two eligible guards, and a displayed recommendation. Call the recommended guard A and another eligible guard B. A controlled simulated review is acceptable for this workflow check if its mode is recorded. Capture the initial schedule, replacement record, relevant absence status, and test notification count.
+
+1. Open Find Replacement and record the AI-recommended guard A. Verify that simply opening/viewing the recommendation has not assigned a replacement or changed the schedule.
+
+2. Choose eligible guard B from the candidate list. Capture the confirmation dialog naming B. Before confirming, verify that the schedule and replacement assignment remain unchanged.
+
+3. Click Cancel. Refresh/read the stored state and verify that no replacement was assigned, no replacement notification was created, and the schedule remains unchanged. In the absence-approval flow, verify that cancellation has not approved the request. An AI review/cache entry may exist without an assignment.
+
+4. Start a separate assignment attempt for B, then click Assign in the confirmation dialog. Verify the stored replacement and affected schedule identify B, even though the AI recommended A. Check the notification recipient and, when applicable, the absence approval.
+
+5. Inspect the AI decision record: the original recommended ID should remain A and the assigned ID should be B with a decision time. Save before/after evidence. Pass only if all workflow criteria are observed; any incorrect change is Failed. Leave unexecuted parts Not assessed.
+
+Evidence to retain: Initial state; recommendation A; confirmation dialog for B; unchanged state after Cancel; persisted schedule/replacement/notification after Assign; decision record; date/time, observer, build, and AI mode.
+
+Selecting B instead of A is the override. The current screen does not require a separate Reject AI button. A passing direct decision-recording unit test alone does not complete this UI observation.
+
+Complete after execution
+
+Run ID: __________    Observer: __________
+Execution date/time and time zone: __________
+Build/commit and environment: __________
+Scenario / input record references: __________
+AI mode and response source: __________
+Model / prompt version (if applicable): __________
+Actual outcome for each step: __________
+Evidence file references: __________
+Result: Passed / Failed / Not assessed
+Unexecuted criteria or discrepancies: __________

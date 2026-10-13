@@ -6,6 +6,7 @@ import '../models/schedule.dart';
 import '../models/station.dart';
 import '../services/api_service.dart';
 import 'main_layout.dart';
+import '../models/schedule_approval.dart';
 
 const List<String> _kMonths = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -120,12 +121,14 @@ class _GuardChoice {
 
 class ScheduleDetailScreen extends StatefulWidget {
   final Schedule schedule;
+  final bool readOnly;
   final VoidCallback onBack;
   final Function(ScreenType, {dynamic data})? onNavigate;
 
   const ScheduleDetailScreen({
     super.key,
     required this.schedule,
+    this.readOnly = false,
     required this.onBack,
     this.onNavigate,
   });
@@ -197,7 +200,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
   // entries use the Morning/Afternoon/Night + HG shift labels). Old
   // dummy schedules still fall back to the sample layout below.
   bool get _hasRealRoster => widget.schedule.days.any((d) => d.entries.any(
-      (e) => e.shift == 'Morning' ||
+      (e) => e.shift == 'Night' || e.shift == 'Morning' ||
           e.shift == 'Afternoon' ||
           e.shift == 'HG Day' ||
           e.shift == 'HG Night'));
@@ -208,16 +211,18 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
   // longer matches. Publishing is final — the roster is reviewed and
   // fixed before it goes out, not after. The backend refuses the same
   // edits.
-  bool get _isLocked => _status == ScheduleStatus.published;
+  bool get _isLocked => widget.readOnly || widget.schedule.awaitingApproval || _status == ScheduleStatus.published;
 
   @override
   void initState() {
     super.initState();
     _status = widget.schedule.status;
-    _loadEmployees();
-    _loadStation();
-    _loadOtherBookings();
-    if (_hasRealRoster) {
+    if (!widget.readOnly) {
+      _loadEmployees();
+      _loadStation();
+      _loadOtherBookings();
+    }
+    if (_hasRealRoster || widget.readOnly) {
       _buildRowsFromSchedule();
     } else {
       _morningRows = _buildDummyShiftRows(
@@ -441,146 +446,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
 
   String _formatDate(DateTime d) => '${_kMonths[d.month - 1]} ${d.day}, ${d.year}';
 
-  // Publishes through the backend for real schedules; dummy sample
-  // schedules just flip locally. There is no way back — publishing
-  // announces the roster to every guard on it, so the schedule locks for
-  // good and the button goes away with it.
-  Future<void> _publish() async {
-    // A schedule can't go out while any guard is still on the Undefined
-    // placeholder post — the backend enforces the same rule, this check
-    // just gives instant feedback with the names.
-    if (_hasRealRoster) {
-      final undefined = [..._morningRows, ..._afternoonRows, ..._nightRows]
-          .where((r) => r.post == 'Undefined')
-          .map((r) => r.employeeName)
-          .toList();
-      if (undefined.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Cannot publish: ${undefined.length} guard(s) still have an '
-                'Undefined post (${undefined.take(3).join(', ')}'
-                '${undefined.length > 3 ? ', …' : ''}). '
-                'Tap their rows to assign a post first.'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-        return;
-      }
-    }
 
-    // One tap is the whole decision, and it can't be taken back, so it
-    // gets confirmed first.
-    final confirmed = await _confirmPublish();
-    if (!confirmed || !mounted) return;
-
-    if (_hasRealRoster && widget.schedule.id.isNotEmpty) {
-      final result = await ApiService.publishSchedule(widget.schedule.id);
-      if (!mounted) return;
-      if (result['success'] != true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed: ${result['error']}'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-        return;
-      }
-    }
-    setState(() => _status = ScheduleStatus.published);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Schedule published')),
-    );
-  }
-
-  // The point-of-no-return dialog: it spells out both consequences —
-  // the guards are told, and the roster can never be edited again —
-  // because neither is visible from the button itself.
-  Future<bool> _confirmPublish() async {
-    final schedule = widget.schedule;
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text('Publish this schedule?'),
-        content: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${schedule.stationName} · '
-                '${_formatDate(schedule.startDate)} – '
-                '${_formatDate(schedule.endDate)}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1E293B),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Every guard on this roster will be notified of the '
-                'assignment they are holding.',
-                style: TextStyle(fontSize: 13, color: Colors.grey[700],
-                    height: 1.4),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFD97706)),
-                ),
-                child: const Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.warning_amber,
-                        size: 18, color: Color(0xFFD97706)),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'This cannot be undone. Once published, the '
-                        'schedule is locked — assignments can no longer be '
-                        'edited.',
-                        style: TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFF92400E),
-                            height: 1.4),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            icon: const Icon(Icons.publish, size: 18),
-            label: const Text('Publish'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1034A6),
-              foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-    return result ?? false;
-  }
 
   void _toast(String message, {bool error = false}) {
     if (!mounted) return;
@@ -1395,11 +1261,11 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
                 const SizedBox(width: 12),
                 // Publishing is one-way, so a published schedule has no
                 // action left here — only the badge saying so.
-                if (!isPublished)
+                if (!widget.readOnly)
                   ElevatedButton.icon(
-                    onPressed: () => _publish(),
+                    onPressed: () => widget.onNavigate?.call(ScreenType.approvals, data: '${schedule.startDate.toIso8601String().substring(0, 10)}|${schedule.endDate.toIso8601String().substring(0, 10)}'),
                     icon: const Icon(Icons.publish, size: 18),
-                    label: const Text('Publish Schedule'),
+                    label: const Text('Period Approvals'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF1034A6),
                       foregroundColor: Colors.white,
@@ -1732,7 +1598,7 @@ class _ScheduleDetailScreenState extends State<ScheduleDetailScreen> {
 
   Widget _buildStatusBadge(bool isPublished) {
     final color = isPublished ? const Color(0xFF059669) : const Color(0xFFD97706);
-    final label = isPublished ? 'Published' : 'Unpublished';
+    final label = widget.readOnly ? 'Submitted Roster' : widget.schedule.approvalId != null ? approvalStatusLabel(widget.schedule.approvalStatus) : isPublished ? 'Published ? Legacy' : 'Draft';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

@@ -4,6 +4,7 @@ import '../screens/login_screen.dart';
 import '../services/notification_center.dart';
 import '../services/session.dart';
 import 'notification_badge.dart';
+import 'workflow_inbox.dart';
 
 class Sidebar extends StatelessWidget {
   final int selectedIndex;
@@ -91,6 +92,9 @@ class Sidebar extends StatelessWidget {
                   label: 'Schedule Management',
                 ),
 
+                _buildMenuItem(index: 8, icon: Icons.fact_check_outlined, label: 'Period Approvals'),
+                _buildMenuItem(index: 9, icon: Icons.manage_accounts_outlined, label: 'Official Accounts'),
+                const WorkflowInboxButton(role: 'admin', color: Colors.white),
                 const SizedBox(height: 24),
                 _buildMenuHeader('TOOLS'),
                 _buildMenuItem(

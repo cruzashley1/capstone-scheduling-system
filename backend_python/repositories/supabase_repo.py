@@ -39,6 +39,7 @@ import atexit
 import os
 import threading
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date, timedelta
 
 from psycopg import sql
@@ -72,6 +73,8 @@ _ID_OMITTED = frozenset({"users", "counters"})
 # Keyed by the camelCase name, because that is the form the document
 # carries by the time this runs.
 _OMIT_WHEN_UNSET = {
+    "users": {"name": None},
+    "schedules": {"approvalId": None, "approvalStatus": None},
     "duty_assignments": {
         "originalTimeIn": None,
         "originalTimeOut": None,
@@ -79,6 +82,8 @@ _OMIT_WHEN_UNSET = {
         "prepMinutes": None,
     },
     "replacements": {
+        "appliedBy": None,
+        "reason": None,
         "timeIn": None,
         "timeOut": None,
         "originalTimeIn": None,
@@ -88,6 +93,18 @@ _OMIT_WHEN_UNSET = {
         "reportAt": None,
     },
 }
+
+_workflow_connection = ContextVar("workflow_connection", default=None)
+
+
+@contextmanager
+def _connection(pool):
+    active = _workflow_connection.get()
+    if active is not None:
+        yield active
+    else:
+        with pool.connection() as conn:
+            yield conn
 
 # The table that holds what schedules.days used to hold inline. Not in
 # COLLECTIONS on purpose — it is storage, not vocabulary, and no caller
@@ -241,7 +258,7 @@ class _Schema:
                                  else [_DUTY_TABLE])
             raise RuntimeError(
                 f"Supabase is missing table(s): {', '.join(missing)}. "
-                f"Apply schema/001_initial.sql to the project first.")
+                f"Apply schema migrations 001 through 005 to the project first.")
 
     def column(self, table, key):
         """The column a camelCase API field maps to.
@@ -559,7 +576,7 @@ class SupabaseCollectionRepo(CollectionRepo):
         where, params = _where(self._schema, self._table, filters or {})
         statement = sql.SQL("SELECT * FROM {}").format(_ident(self._table))
         statement = statement + where + sql.SQL(" ORDER BY id")
-        with self._pool.connection() as conn, conn.cursor() as cur:
+        with _connection(self._pool) as conn, conn.cursor() as cur:
             cur.execute(statement, params)
             rows = [_row_out(self._table, r) for r in cur.fetchall()]
             return self._hydrate(cur, rows)
@@ -586,7 +603,7 @@ class SupabaseCollectionRepo(CollectionRepo):
     def upsert(self, doc_id, data, merge=False):
         data = _with_id(doc_id, data)
         statement, params = _upsert_sql(self._schema, self._table, data, merge)
-        with self._pool.connection() as conn, conn.cursor() as cur:
+        with _connection(self._pool) as conn, conn.cursor() as cur:
             cur.execute(statement, params)
 
     def upsert_many(self, records):
@@ -604,7 +621,7 @@ class SupabaseCollectionRepo(CollectionRepo):
             data = _with_id(doc_id, data)
             groups.setdefault(tuple(data), []).append(data)
 
-        with self._pool.connection() as conn, conn.cursor() as cur:
+        with _connection(self._pool) as conn, conn.cursor() as cur:
             for keys, batch in groups.items():
                 columns = [self._schema.column(self._table, k) for k in keys]
                 conflict = _conflict_clause(
@@ -629,11 +646,11 @@ class SupabaseCollectionRepo(CollectionRepo):
                         params)
 
     def update(self, doc_id, fields):
-        with self._pool.connection() as conn, conn.cursor() as cur:
+        with _connection(self._pool) as conn, conn.cursor() as cur:
             _update_one(cur, self._schema, self._table, doc_id, fields)
 
     def delete(self, doc_id):
-        with self._pool.connection() as conn, conn.cursor() as cur:
+        with _connection(self._pool) as conn, conn.cursor() as cur:
             cur.execute(
                 sql.SQL("DELETE FROM {} WHERE id = %s").format(
                     _ident(self._table)),
@@ -642,7 +659,7 @@ class SupabaseCollectionRepo(CollectionRepo):
     def delete_many(self, doc_ids):
         doc_ids = list(doc_ids)
         if doc_ids:
-            with self._pool.connection() as conn, conn.cursor() as cur:
+            with _connection(self._pool) as conn, conn.cursor() as cur:
                 cur.execute(
                     sql.SQL("DELETE FROM {} WHERE id = ANY(%s)").format(
                         _ident(self._table)),
@@ -652,7 +669,7 @@ class SupabaseCollectionRepo(CollectionRepo):
         return len(doc_ids)
 
     def update_where(self, filters, fields):
-        with self._pool.connection() as conn, conn.cursor() as cur:
+        with _connection(self._pool) as conn, conn.cursor() as cur:
             return _update_where(cur, self._schema, self._table,
                                  filters, fields)
 
@@ -713,7 +730,7 @@ class SupabaseSchedulesRepo(SupabaseCollectionRepo):
         data = {k: v for k, v in data.items() if k != "days"}
 
         statement, params = _upsert_sql(self._schema, self._table, data, merge)
-        with self._pool.connection() as conn, conn.cursor() as cur:
+        with _connection(self._pool) as conn, conn.cursor() as cur:
             with conn.transaction():
                 cur.execute(statement, params)
                 if touches_days:
@@ -727,7 +744,7 @@ class SupabaseSchedulesRepo(SupabaseCollectionRepo):
         days = fields.get("days")
         touches_days = "days" in fields
         fields = {k: v for k, v in fields.items() if k != "days"}
-        with self._pool.connection() as conn, conn.cursor() as cur:
+        with _connection(self._pool) as conn, conn.cursor() as cur:
             with conn.transaction():
                 if fields:
                     _update_one(cur, self._schema, self._table, doc_id, fields)
@@ -832,6 +849,24 @@ class SupabaseRepository(Repository):
         return self._repos[name]
 
     @contextmanager
+    def workflow_transaction(self):
+        """One transaction across reads/writes, serialized across API workers.
+
+        Generation, decisions, revisions and emergency replacements all use
+        this lock, so a reviewed roster cannot change during final approval.
+        """
+        if _workflow_connection.get() is not None:
+            yield
+            return
+        with self._pool.connection() as conn, conn.transaction():
+            conn.execute("SELECT pg_advisory_xact_lock(837214005)")
+            token = _workflow_connection.set(conn)
+            try:
+                yield
+            finally:
+                _workflow_connection.reset(token)
+
+    @contextmanager
     def transaction(self):
         """Yields a Transaction, committing only on a clean exit.
 
@@ -839,7 +874,7 @@ class SupabaseRepository(Repository):
         station rename — schedules renamed, employees not — cannot reach
         the database.
         """
-        with self._pool.connection() as conn, conn.cursor() as cur:
+        with _connection(self._pool) as conn, conn.cursor() as cur:
             with conn.transaction():
                 yield SupabaseTransaction(cur, self._schema)
 
@@ -850,7 +885,7 @@ class SupabaseRepository(Repository):
         both write 977, which is what would hand two new employees the
         same username. Starting at 1 matches the existing counters.
         """
-        with self._pool.connection() as conn, conn.cursor() as cur:
+        with _connection(self._pool) as conn, conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO counters (id, value) VALUES (%s, 1) "
                 "ON CONFLICT (id) DO UPDATE SET value = counters.value + 1 "

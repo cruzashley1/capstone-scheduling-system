@@ -1,0 +1,164 @@
+{
+  "source": "C:\\Users\\user\\OneDrive\\Documents\\RevisedPaper.docx",
+  "source_sha256": "08d2d8abc6046164b34eafe96a620eabc13c88a0514fcac046ca118b89db999b",
+  "output": "C:\\prototype\\docs\\revisions\\RevisedPaper_ISO25059_Edited.docx",
+  "changes": [
+    {
+      "action": "replace",
+      "original_block": 96,
+      "label": "Abstract: distinguish survey results from the supplementary AI assessment",
+      "before": "Evaluation using the ISO/IEC 25010 software quality model resulted in an overall weighted mean of 4.74 interpreted as Highly Acceptable. The findings indicate that the developed system provides an effective and organized approach to managing security personnel schedules and handling absences, while assisting administrators in making appropriate replacement assignments.",
+      "after": "The ISO/IEC 25010-based questionnaire evaluation resulted in overall ratings of 4.79 from the five IT experts and 4.74 from the 211 end users, both interpreted as Highly Acceptable. A supplementary assessment maps the documented AI-related tests to selected ISO/IEC 25059:2023 quality characteristics and identifies behaviors requiring further observation. The findings indicate that the developed system provides an organized approach to managing security personnel schedules and handling absences while assisting administrators in making replacement assignments."
+    },
+    {
+      "action": "insert",
+      "before_original_block": 241,
+      "label": "Section 1.3: add the scope of the AI assessment",
+      "text": [
+        "The software evaluation uses the existing ISO/IEC 25010-based questionnaire. The AI-assisted absence-handling feature is additionally examined through documented testing and observation guided by selected ISO/IEC 25059:2023 quality characteristics: functional correctness, robustness, transparency, and user controllability. This supplementary assessment uses the researchers’ test records and does not require a separate respondent questionnaire. Its conclusions are limited to the characteristics and test conditions supported by recorded evidence."
+      ]
+    },
+    {
+      "action": "replace",
+      "original_block": 500,
+      "label": "Section 3.7: introduce both evaluation approaches",
+      "before": " The quality model serves as the framework for evaluating software products. It identifies the key characteristics used to determine if a system satisfies its stakeholders' requirements. By categorizing needs like maintainability and security into organized sub- characteristics, the model provides a clear way to measure the overall value and performance of the software. ",
+      "after": "The evaluation uses two complementary sources of evidence. The ISO/IEC 25010-based questionnaire provides respondent ratings of software quality and acceptability. A supplementary technical assessment uses selected characteristics from ISO/IEC 25059:2023 to interpret documented testing and observation of the AI-assisted absence-handling feature. ISO/IEC 25059 provides a quality model for AI systems (International Organization for Standardization [ISO] & International Electrotechnical Commission [IEC], 2023); the specific observation criteria are defined for this project."
+    },
+    {
+      "action": "replace",
+      "original_block": 501,
+      "label": "Section 3.7: correct Table 22 reference and clarify its purpose",
+      "before": " The Project Evaluation Guideline presented in table 1 comprises a comprehensive set of criteria. It empowers the researcher to gather feedback, conduct tests, and analyze results, facilitating an evaluation of the project’s deliverables and their impact on users and stakeholders. ",
+      "after": "Table 22 presents the six software quality criteria used in the existing ISO/IEC 25010-based respondent evaluation. The supplementary AI assessment is described separately under AI Testing and Observation."
+    },
+    {
+      "action": "replace",
+      "original_block": 508,
+      "label": "Evaluation Design: change eight to six and explain the additional test-based assessment",
+      "before": " The study will employ a descriptive-quantitative research design to evaluate the developed system’s performance and acceptability. Since the project follows the RAD Model, the evaluation phase serves as the final verification of the system requirements. The researchers will adopt the ISO/IEC 25010 Software Quality Model as the primary framework for assessment. The evaluation will specifically focus on eight key characteristics relevant to the system’s AI and scheduling capabilities: Functional Suitability, Performance ",
+      "after": "The study employed a descriptive-quantitative approach for the respondent evaluation. Following the Rapid Application Development model, the developed system was evaluated through an ISO/IEC 25010-based instrument covering six selected characteristics: Functional Suitability, Performance Efficiency, Compatibility, Reliability, Usability, and Maintainability. The additional ISO/IEC 25059 assessment organizes existing AI-related test findings and further observations by quality characteristic. It does not introduce another respondent survey or replace the existing software-quality evaluation."
+    },
+    {
+      "action": "replace",
+      "original_block": 512,
+      "label": "Respondents: retain the original sample and distinguish it from test observers",
+      "before": "The respondents of the study will consist of two groups: IT Experts and End Users. Five (5) IT Experts with relevant knowledge and experience in information technology and software development will evaluate the system based on the technical aspects of the ISO/IEC 25010 Software Quality Model. The End Users will consist of the Admin, Head Guards, and Security Personnel of Kaizen Security Agency Corp who will evaluate the system based on its Functional Sustainability, Performance Efficiency, Compatibility, Reliability, Usability, Maintainability in managing duties and absences.",
+      "after": "The questionnaire respondents consisted of two groups: five (5) IT experts and 211 end users. The IT experts evaluated technical aspects of the developed system, while the end users comprised administrators, head guards, and security personnel of Kaizen Security Agency Corp. Both groups used the existing ISO/IEC 25010-based evaluation instrument. The supplementary ISO/IEC 25059 assessment uses test cases and researcher observations; it does not add another respondent group."
+    },
+    {
+      "action": "replace",
+      "original_block": 515,
+      "label": "Evaluation Instrument: retain the existing Google Forms questionnaire",
+      "before": " To gather the necessary data, the researchers will utilize a structured Evaluation ",
+      "after": "The researchers used a structured Evaluation Rating Scale delivered through Google Forms. The questionnaire was adapted from the ISO/IEC 25010 software quality model and used statements suitable for the study’s respondents. It remains the instrument for the respondent evaluation."
+    },
+    {
+      "action": "insert",
+      "before_original_block": 518,
+      "label": "Section 3.7: add AI Testing and Observation",
+      "text": [
+        "AI Testing and Observation",
+        "The supplementary AI assessment maps documented test results to four selected ISO/IEC 25059:2023 quality characteristics. Functional correctness is examined by checking whether replacement candidates satisfy the independently verified availability, schedule, shift, and post requirements. Robustness is examined through the workflow’s behavior when the AI service fails or the candidate information changes. Transparency is examined by checking whether the recommendation’s explanation agrees with the supplied records and whether AI advice can be distinguished from rule-based fallback. User controllability is examined by checking whether the administrator can confirm, reject, or change a recommendation before assignment.",
+        "For each assessed case, the researchers record the test condition, expected behavior, actual behavior, and supporting screenshot or log, together with the observer, test date, and system version. The record identifies whether the AI response was live, simulated, cached, or unavailable. Existing test records may be used when their conditions and outcomes can be traced. Where an observation is missing, the corresponding behavior is marked Not assessed until supporting evidence is recorded. The observation record is completed by the researchers and is not distributed as another questionnaire.",
+        "The findings are compared with the expected behavior and reported descriptively. A criterion is marked Met only when supported by the recorded observation, and Not met when the actual behavior differs from the expected result. These are study-specific reporting labels. Simulated AI failures support findings about validation and fallback behavior; they do not establish the quality of live model recommendations. The assessment covers the selected characteristics and observed scenarios rather than full conformity with ISO/IEC 25059."
+      ]
+    },
+    {
+      "action": "replace",
+      "original_block": 519,
+      "label": "Likert Scale: limit Likert ratings to the questionnaire",
+      "before": " The survey will utilize a 5-point Likert Scale to measure the level of agreement for each criteria:  ",
+      "after": "The questionnaire used the following five-point Likert scale to rate the acceptability of each item. This scale applies to the respondent evaluation; it is not used to score the ISO/IEC 25059 test observations."
+    },
+    {
+      "action": "replace",
+      "original_block": 525,
+      "label": "Clarify the role of the questionnaire means",
+      "before": "This quantitative approach will allow the researchers to calculate the mean scores for each software quality characteristic, determining the overall acceptability of the Scheduling and Duty Management System. ",
+      "after": "The questionnaire means summarize respondent ratings of the six software quality characteristics and the overall acceptability of the Scheduling and Duty Management System."
+    },
+    {
+      "action": "insert",
+      "before_original_block": 535,
+      "label": "Data Analysis Method: distinguish observation findings from weighted means",
+      "text": [
+        "The ISO/IEC 25059 observations are analyzed separately by comparing the expected and actual behavior for each test case. The discussion identifies which quality characteristic is supported, the evidence used, and any limitation or observation still required. These findings are not combined with the questionnaire means, and no additional Likert rating or overall ISO/IEC 25059 score is calculated."
+      ]
+    },
+    {
+      "action": "replace",
+      "original_block": 550,
+      "label": "Correct Chapter IV subtitle to match the chapter content",
+      "before": "THE PROBLEM AND ITS BACKGROUND ",
+      "after": "RESULTS AND DISCUSSIONS"
+    },
+    {
+      "action": "replace",
+      "original_block": 552,
+      "label": "Chapter IV introduction: include the supplementary AI assessment",
+      "before": "This chapter presents the results and discussions of the Scheduling and Duty Management System with AI Application in Absence Handling developed for Kaizen Security Agency Corp. The chapter is structured in accordance with the research methodology and follows the professor's prescribed outline: Development and Testing, Evaluation Results, and Data Interpretation. It covers the outcomes of unit and integration testing, the results of the ISO/IEC 25010-based user acceptance testing conducted with IT Experts and End Users, and the interpretation of the system's overall acceptability. The findings demonstrate how the system's web-based admin dashboard and mobile application address the specific objectives of automating scheduling, managing duties and absences, and streamlining attendance reporting across the organization.",
+      "after": "This chapter presents the development, testing, and evaluation of the Scheduling and Duty Management System with AI Application in Absence Handling for Kaizen Security Agency Corp. It reports unit and integration tests, response-time measurements, and the ISO/IEC 25010-based ratings of IT experts and end users. A supplementary assessment maps the documented AI-related behavior to selected ISO/IEC 25059:2023 quality characteristics. The interpretation distinguishes tested behavior from features that require further recorded observation."
+    },
+    {
+      "action": "insert",
+      "before_original_block": 560,
+      "label": "Section 4.1: add Table 24A after Table 24 and its legend",
+      "text": [
+        "AI Quality Assessment Based on ISO/IEC 25059:2023",
+        "The AI-assisted absence-handling feature was examined by mapping the existing test findings and documented behavior to selected ISO/IEC 25059:2023 quality characteristics. Table 24A identifies the available evidence and the limits of each interpretation. It uses the current paper’s reported results and does not treat an implemented feature as proof that every related quality requirement has been tested.",
+        "Table 24A. AI Quality Assessment Based on Testing and Observation",
+        "Quality characteristicBehavior documented in the paperEvidence and interpretationFunctional correctnessIneligible candidates were excluded and the remaining replacement candidates were scored using the scheduling criteria.Table 24, TC007 reports the screening and scoring result. It supports correctness of the tested rule-based screening; it does not establish that the AI selects the best eligible guard.RobustnessThe rule-based ranking remained available under the AI failure conditions tested.Table 24, TC007 and Section 5.1 report fallback behavior. This supports continuity of the replacement workflow in those conditions. The test logs should identify the individual failure cases.TransparencyThe system provides explanatory reasoning with its replacement recommendation.Sections 1.3 and 5.1 describe this feature. Table 24 does not separately report whether live explanations agree with the source records. Explanation accuracy therefore remains Not assessed in this supplementary mapping.User controllabilityThe administrator confirms the final replacement assignment.Sections 1.3 and 3.8 describe administrator control. Table 24 does not separately record rejecting a recommendation, selecting an alternative, or cancelling an assignment. These interaction outcomes remain Not assessed in this mapping.",
+        "The documented screening and fallback results provide evidence for specific aspects of functional correctness and robustness within the tested workflow. Explanation accuracy and the administrator’s rejection, alternative-selection, and cancellation actions require separate observation records before a test finding can be reported. These observations can be collected during system testing without administering another questionnaire. The findings do not establish that AI ranking is superior to rule-based ranking or that the system conforms to all requirements of ISO/IEC 25059."
+      ]
+    },
+    {
+      "action": "insert",
+      "before_original_block": 647,
+      "label": "Section 5.1: summarize the evidence and remaining observations",
+      "text": [
+        "The supplementary ISO/IEC 25059 mapping identified reported evidence for candidate screening and preservation of the rule-based ranking during the tested AI failures. These findings support specific aspects of functional correctness and robustness. The paper describes explanatory reasoning and administrator confirmation, but separate observations are still needed to establish explanation accuracy and the outcomes of rejecting, changing, or cancelling a recommendation. These remaining checks are part of system testing rather than a new respondent evaluation."
+      ]
+    },
+    {
+      "action": "replace",
+      "original_block": 659,
+      "label": "Section 5.2: align the AI conclusion with the available evidence",
+      "before": "Artificial intelligence is safest in this domain when it is placed where it can only improve an answer that already exists. Because the language model re-ranks a list the system’s own rules produced, the system continues to deliver qualified, ranked candidates when the model is unreachable, out of quota, disabled, or malformed in its reply. The study concludes that the advisory placement of AI defined in Chapter I is not a limitation accepted for safety’s sake alone, but the arrangement that makes the feature dependable for an agency whose stations must be covered whether or not an external service answers that afternoon.",
+      "after": "The advisory placement of AI allows the replacement workflow to retain its rule-based candidate ranking when the AI service cannot provide usable advice. The reported tests support this fallback behavior under the conditions examined. The ISO/IEC 25059 mapping therefore supports conclusions about the documented screening and fallback behavior, while further observations are needed for explanation accuracy and administrator control. The study does not establish that AI always improves the ranking or that the observed behaviors demonstrate full conformity with the standard."
+    },
+    {
+      "action": "replace",
+      "original_block": 670,
+      "label": "Section 5.3 recommendation 4: specify the remaining observations",
+      "before": "Analyze recorded administrator decisions against AI recommendations to measure usefulness and refine rule-based scoring weights. Maintain the golden-file contract test by running it before every release and documenting any endpoint differences in writing.",
+      "after": "Analyze recorded administrator decisions against AI recommendations to examine usefulness and refine rule-based scoring weights. Maintain the golden-file contract test by running it before every release and documenting endpoint differences. Complete the remaining ISO/IEC 25059 observations by comparing live explanations with the underlying records and recording the administrator’s rejection, alternative-selection, and cancellation actions. Retain the test conditions, actual outcomes, screenshots or logs, and system version as evidence, and repeat relevant checks after changes to the model, prompt, rules, or interface."
+    },
+    {
+      "action": "insert",
+      "before_original_block": 728,
+      "label": "References: add ISO/IEC 25059:2023",
+      "text": [
+        "Evaluation Standard",
+        "International Organization for Standardization, & International Electrotechnical Commission. (2023). Software engineering — Systems and software Quality Requirements and Evaluation (SQuaRE) — Quality model for AI systems (ISO/IEC Standard No. 25059:2023). https://www.iso.org/standard/80655.html"
+      ]
+    }
+  ],
+  "preserved_original_parts": 151,
+  "existing_survey_tables_unchanged": true,
+  "all_original_media_preserved": true,
+  "navigation_bookmarks": [
+    "ISO_Abstract",
+    "ISO_Scope",
+    "ISO_Section37",
+    "ISO_Method",
+    "ISO_Analysis",
+    "ISO_Section41",
+    "ISO_Results",
+    "ISO_Table24A",
+    "ISO_Findings",
+    "ISO_Conclusion",
+    "ISO_Recommendation",
+    "ISO_Reference"
+  ]
+}

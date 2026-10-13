@@ -163,6 +163,10 @@ class Schedule {
   final DateTime createdAt;
   final ScheduleStatus status;
   final List<ScheduleDay> days;
+  final String? approvalId;
+  final String approvalStatus;
+  bool get awaitingApproval => approvalStatus == 'pending_assistant' || approvalStatus == 'pending_commander';
+  bool get canExport => status == ScheduleStatus.published && approvalStatus == 'approved';
 
   // What the generator had to bend to produce this roster. Carried on the
   // schedule itself so any screen holding one can report on it — the Auto
@@ -179,6 +183,8 @@ class Schedule {
     required this.createdAt,
     required this.status,
     required this.days,
+    this.approvalId,
+    this.approvalStatus = "draft",
     this.notes = const <ScheduleNote>[],
   });
 
@@ -207,6 +213,8 @@ class Schedule {
           .map((d) => ScheduleDay.fromJson(Map<String, dynamic>.from(d)))
           .toList(),
       notes: parseScheduleNotes(json),
+      approvalId: json['approvalId'],
+      approvalStatus: json['approvalStatus'] ?? 'draft',
     );
   }
 
@@ -231,6 +239,8 @@ class Schedule {
       status: status ?? this.status,
       days: days ?? this.days,
       notes: notes ?? this.notes,
+      approvalId: approvalId,
+      approvalStatus: approvalStatus,
     );
   }
 }

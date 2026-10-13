@@ -190,79 +190,6 @@ class _ScheduleManagementContentState extends State<ScheduleManagementContent> {
     );
   }
 
-  Future<void> _publishAll() async {
-    // Server is the source of truth; only flip locally once it confirms
-    // (or when running offline against dummy data).
-    if (!_usingDummyData) {
-      // The server refuses schedules that still contain Undefined posts
-      // or no guards at all, so re-fetch instead of flipping everything
-      // locally — both the call and the re-fetch sit behind the spinner.
-      final result = await _withProgress<Map<String, dynamic>>(
-        'Publishing schedules…',
-        () async {
-          final r = await ApiService.publishAllSchedules();
-          if (r['success'] == true) await _loadSchedules();
-          return r;
-        },
-      );
-      if (result == null || !mounted) return;
-
-      if (result['success'] != true) {
-        await _showResultDialog(
-          kind: _ResultKind.failure,
-          title: 'Publish Failed',
-          message: 'No schedule was published.\n\n${result['error']}',
-        );
-        return;
-      }
-
-      // Name the stations that were held back so the count is never
-      // abstract and the admin knows what to fix.
-      final publishedCount = result['published'] ?? 0;
-      final skipped =
-          (result['skippedUndefined'] as List?)?.cast<String>() ?? [];
-      final skippedEmpty =
-          (result['skippedEmpty'] as List?)?.cast<String>() ?? [];
-      final problems = <String>[
-        if (skipped.isNotEmpty)
-          '${skipped.join(', ')} still have Undefined posts — open each '
-              'schedule to assign them.',
-        if (skippedEmpty.isNotEmpty)
-          '${skippedEmpty.join(', ')} have no guards assigned — check the '
-              'generation notes and re-generate.',
-      ];
-
-      await _showResultDialog(
-        kind: problems.isEmpty ? _ResultKind.success : _ResultKind.warning,
-        title: problems.isEmpty
-            ? 'Schedules Published'
-            : 'Published with Exceptions',
-        message: problems.isEmpty
-            ? '$publishedCount schedule(s) published. The guards on them '
-                'have been notified and the rosters now show on each '
-                'station\'s page.'
-            : '$publishedCount schedule(s) published. These were held '
-                'back:\n\n• ${problems.join('\n\n• ')}',
-      );
-      return;
-    }
-
-    setState(() {
-      _schedules = _schedules
-          .map((s) => s.status == ScheduleStatus.unpublished
-              ? s.copyWith(status: ScheduleStatus.published)
-              : s)
-          .toList();
-    });
-
-    await _showResultDialog(
-      kind: _ResultKind.success,
-      title: 'Schedules Published',
-      message: 'All schedules published. These are sample schedules — the '
-          'server was unreachable, so nothing was saved.',
-    );
-  }
-
   // --- Bulk delete ---
 
   // The schedules a bulk-delete scope covers. Deliberately ignores the
@@ -632,108 +559,37 @@ class _ScheduleManagementContentState extends State<ScheduleManagementContent> {
     filtered.where((s) => s.status == ScheduleStatus.unpublished).toList();
     final published =
     filtered.where((s) => s.status == ScheduleStatus.published).toList();
-    final hasUnpublished =
-    _schedules.any((s) => s.status == ScheduleStatus.unpublished);
+
 
     return Container(
       color: const Color(0xFFF8FAFC),
       child: Column(
         children: [
-          // Header - back button, title, search bar, Publish All
           Container(
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => widget.onNavigate(ScreenType.dashboard),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Schedule Management',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E293B),
-                        ),
-                      ),
-                      Text(
-                        'Review unpublished schedules and manage published ones',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Search Bar
-                Container(
-                  width: 280,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey[300]!),
-                  ),
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: 'Search schedules...',
-                      hintStyle: TextStyle(color: Colors.grey[500]),
-                      prefixIcon: Icon(Icons.search, color: Colors.grey[500]),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                        icon: Icon(Icons.clear, color: Colors.grey[500], size: 18),
-                        onPressed: () {
-                          _searchController.clear();
-                        },
-                      )
-                          : null,
-                      border: InputBorder.none,
-                      contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                // Publish All — bulk-publishes every unpublished schedule
-                ElevatedButton.icon(
-                  onPressed: hasUnpublished ? _publishAll : null,
-                  icon: const Icon(Icons.publish, size: 18),
-                  label: const Text('Publish All'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1034A6),
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.grey[300],
-                    disabledForegroundColor: Colors.grey[500],
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
+            color: Colors.white,
+            child: LayoutBuilder(builder: (context, constraints) {
+              final title = Row(children: [
+                IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => widget.onNavigate(ScreenType.dashboard)),
                 const SizedBox(width: 12),
-                // Bulk delete — the three scopes live behind one menu so
-                // the destructive actions stay out of the way of the
-                // everyday Publish All button.
+                const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Schedule Management', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+                  Text('Prepare drafts and track publication after both approvals', style: TextStyle(color: Colors.blueGrey, fontSize: 14)),
+                ])),
+              ]);
+              final actions = Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                SizedBox(width: 230, height: 44, child: TextField(controller: _searchController,
+                  decoration: InputDecoration(hintText: 'Search schedules...', prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchQuery.isEmpty ? null : IconButton(icon: const Icon(Icons.clear), onPressed: _searchController.clear),
+                    border: const OutlineInputBorder(), contentPadding: const EdgeInsets.symmetric(horizontal: 12)))),
+                FilledButton.icon(onPressed: () => widget.onNavigate(ScreenType.approvals), icon: const Icon(Icons.fact_check_outlined), label: const Text('Period Approvals')),
                 _buildDeleteMenu(),
-              ],
-            ),
+              ]);
+              if (constraints.maxWidth < 1000) {
+                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [title, const SizedBox(height: 16), actions]);
+              }
+              return Row(children: [Expanded(child: title), const SizedBox(width: 20), actions]);
+            }),
           ),
 
           // Search results count
@@ -926,7 +782,7 @@ class _ScheduleManagementContentState extends State<ScheduleManagementContent> {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            isPublished ? 'Published' : 'Unpublished',
+                            schedule.awaitingApproval ? (schedule.approvalStatus == 'pending_assistant' ? 'Assistant review' : 'Commander review') : schedule.approvalStatus == 'returned' ? 'Returned' : isPublished ? 'Published' : 'Draft',
                             style: TextStyle(
                               color: statusColor,
                               fontSize: 11,
@@ -1018,7 +874,7 @@ class _ScheduleManagementContentState extends State<ScheduleManagementContent> {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     TextButton.icon(
-                      onPressed: () => _deleteSchedule(schedule),
+                      onPressed: schedule.awaitingApproval || schedule.approvalStatus == 'approved' ? null : () => _deleteSchedule(schedule),
                       icon: const Icon(Icons.delete_outline, size: 16),
                       label: const Text('Delete'),
                       style: TextButton.styleFrom(

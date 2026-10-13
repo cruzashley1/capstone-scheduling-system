@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'screens/login_screen.dart';
+import 'screens/official_layout.dart';
 import 'screens/main_layout.dart';
 import 'screens/headguardui/head_guard_layout.dart';
 import 'screens/securityguardui/security_guard_layout.dart';
@@ -42,6 +43,9 @@ class SchedulingSystemApp extends StatelessWidget {
     final s = session;
     if (s == null) return const AuthScreen();
     switch (s.role) {
+      case 'assistantSecurity':
+      case 'areaCommander':
+        return OfficialLayout(username: s.username, role: s.role);
       case 'admin':
         return MainLayout(username: s.username);
       case 'headGuard':

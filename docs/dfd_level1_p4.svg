@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1860" width="2400" height="1860" role="img" aria-label="Data Flow Diagram Level 1, sheet 4 of 4: AI Absence Handling.">
+  <defs>
+    <marker id="ar" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#0B0B0C"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="2400" height="1860" fill="#FFFFFF"/>
+
+  <g font-family="'Segoe UI','Nunito Sans','Trebuchet MS',system-ui,sans-serif" fill="#0B0B0C">
+
+    <text x="1200" y="102" font-size="62" font-weight="700" text-anchor="middle">Data Flow Diagram Level 1</text>
+
+    <g fill="none" stroke="#0B0B0C" stroke-width="4">
+      <!-- entities -->
+      <rect x="120" y="300"  width="360" height="180"/>
+      <rect x="120" y="620"  width="360" height="340"/>
+      <rect x="120" y="1100" width="360" height="180"/>
+      <rect x="900" y="1580" width="520" height="180"/>
+      <!-- process -->
+      <rect x="850" y="480" width="550" height="700" rx="40"/>
+      <line x1="850" y1="548" x2="1400" y2="548"/>
+      <!-- data stores -->
+      <rect x="1700" y="490"  width="580" height="110"/><line x1="1830" y1="490"  x2="1830" y2="600"/>
+      <rect x="1700" y="620"  width="580" height="140"/><line x1="1830" y1="620"  x2="1830" y2="760"/>
+      <rect x="1700" y="780"  width="580" height="140"/><line x1="1830" y1="780"  x2="1830" y2="920"/>
+      <rect x="1700" y="940"  width="580" height="110"/><line x1="1830" y1="940"  x2="1830" y2="1050"/>
+      <rect x="1700" y="1070" width="580" height="140"/><line x1="1830" y1="1070" x2="1830" y2="1210"/>
+      <rect x="1700" y="1240" width="580" height="110"/><line x1="1830" y1="1240" x2="1830" y2="1350"/>
+      <rect x="1700" y="1380" width="580" height="110"/><line x1="1830" y1="1380" x2="1830" y2="1490"/>
+    </g>
+
+    <g font-size="46" text-anchor="middle">
+      <text x="300" y="370">Head</text>
+      <text x="300" y="425">Guard</text>
+      <text x="300" y="805">Administrator</text>
+      <text x="300" y="1170">Security</text>
+      <text x="300" y="1225">Personnel</text>
+      <text x="1160" y="1650">AI Service</text>
+      <text x="1160" y="1705">(Gemini)</text>
+    </g>
+
+    <g text-anchor="middle">
+      <text x="1125" y="528" font-size="40">7.0</text>
+      <text x="1125" y="840" font-size="46">AI Absence</text>
+      <text x="1125" y="895" font-size="46">Handling</text>
+    </g>
+
+    <g text-anchor="middle">
+      <text x="1765" y="560"  font-size="44">D1</text><text x="2075" y="560"  font-size="44">Employees tbl</text>
+      <text x="1765" y="705"  font-size="44">D8</text><text x="2075" y="705"  font-size="34">Attendance Reports tbl</text>
+      <text x="1765" y="865"  font-size="44">D6</text><text x="2075" y="865"  font-size="44">Schedules tbl</text>
+      <text x="1765" y="1010" font-size="44">D13</text><text x="2075" y="1010" font-size="44">Cover Offers tbl</text>
+      <text x="1765" y="1155" font-size="44">D9</text><text x="2075" y="1155" font-size="42">AI Suggestions tbl</text>
+      <text x="1765" y="1310" font-size="44">D10</text><text x="2075" y="1310" font-size="42">Replacements tbl</text>
+      <text x="1765" y="1450" font-size="44">D11</text><text x="2075" y="1450" font-size="42">Notifications tbl</text>
+    </g>
+
+    <g fill="none" stroke="#0B0B0C" stroke-width="4" marker-end="url(#ar)">
+      <!-- entities -->
+      <polyline points="480,390 700,390 700,540 850,540"/>
+      <polyline points="850,700 480,700"/>
+      <polyline points="480,790 850,790"/>
+      <polyline points="850,1000 600,1000 600,1190 480,1190"/>
+      <!-- stores -->
+      <polyline points="1700,545 1400,545"/>
+      <polyline points="1400,655 1700,655"/>
+      <polyline points="1700,725 1400,725"/>
+      <polyline points="1700,800 1400,800"/>
+      <polyline points="1400,870 1700,870"/>
+      <polyline points="1700,975 1400,975"/>
+      <polyline points="1400,1105 1700,1105"/>
+      <polyline points="1700,1175 1400,1175"/>
+      <polyline points="1300,1180 1300,1295 1700,1295"/>
+      <polyline points="1200,1180 1200,1435 1700,1435"/>
+      <!-- AI service -->
+      <polyline points="950,1180 950,1580"/>
+      <polyline points="1050,1580 1050,1180"/>
+    </g>
+
+    <g font-size="32" text-anchor="middle">
+      <text x="590" y="336">Attendance</text>
+      <text x="590" y="372">Report</text>
+      <text x="665" y="682">Ranked Replacement List</text>
+      <text x="665" y="772">Assign Replacement</text>
+      <text x="715" y="928">Cover Assignment</text>
+      <text x="715" y="964">Notice</text>
+      <text x="1550" y="527">Eligible Personnel</text>
+      <text x="1550" y="637">Store Attendance</text>
+      <text x="1550" y="707">Absent Personnel</text>
+      <text x="1550" y="782">Duty Conflicts</text>
+      <text x="1550" y="852">Update Duty</text>
+      <text x="1550" y="957">Volunteer Offers</text>
+      <text x="1550" y="1087">Store AI Review</text>
+      <text x="1550" y="1157">Cached Review</text>
+      <text x="1500" y="1277">Store Replacement</text>
+      <text x="1520" y="1417">Create Notification</text>
+      <text x="930" y="1490" text-anchor="end">Shortlist &amp;</text>
+      <text x="930" y="1526" text-anchor="end">Absence Context</text>
+      <text x="1070" y="1508" text-anchor="start">AI Recommendation</text>
+    </g>
+
+  </g>
+</svg>

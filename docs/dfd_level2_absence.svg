@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2720 2200" width="2720" height="2200" role="img" aria-label="AI Absence Handling Data Flow Diagram Level 2, processes 7.1 to 7.4.">
+  <defs>
+    <marker id="ar" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#0B0B0C"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="2720" height="2200" fill="#FFFFFF"/>
+
+  <g font-family="'Segoe UI','Nunito Sans','Trebuchet MS',system-ui,sans-serif" fill="#0B0B0C">
+
+    <text x="1360" y="120" font-size="60" font-weight="700" text-anchor="middle">AI Absence Handling DFD Level 2</text>
+
+    <!-- ── Shapes ───────────────────────────────────────── -->
+    <g fill="none" stroke="#0B0B0C" stroke-width="4">
+      <!-- entities -->
+      <rect x="120" y="280"  width="360" height="200"/>
+      <rect x="120" y="700"  width="360" height="340"/>
+      <rect x="300" y="1180" width="360" height="220"/>
+      <rect x="120" y="1700" width="360" height="200"/>
+      <!-- processes -->
+      <rect x="900" y="250"  width="520" height="320" rx="40"/>
+      <line x1="900" y1="318" x2="1420" y2="318"/>
+      <rect x="900" y="660"  width="520" height="320" rx="40"/>
+      <line x1="900" y1="728" x2="1420" y2="728"/>
+      <rect x="900" y="1080" width="520" height="380" rx="40"/>
+      <line x1="900" y1="1148" x2="1420" y2="1148"/>
+      <rect x="900" y="1560" width="520" height="340" rx="40"/>
+      <line x1="900" y1="1628" x2="1420" y2="1628"/>
+      <!-- data stores -->
+      <rect x="1800" y="250"  width="640" height="160"/><line x1="1930" y1="250"  x2="1930" y2="410"/>
+      <rect x="1800" y="460"  width="640" height="110"/><line x1="1930" y1="460"  x2="1930" y2="570"/>
+      <rect x="1800" y="680"  width="640" height="110"/><line x1="1930" y1="680"  x2="1930" y2="790"/>
+      <rect x="1800" y="840"  width="640" height="110"/><line x1="1930" y1="840"  x2="1930" y2="950"/>
+      <rect x="1800" y="1000" width="640" height="200"/><line x1="1930" y1="1000" x2="1930" y2="1200"/>
+      <rect x="1800" y="1260" width="640" height="110"/><line x1="1930" y1="1260" x2="1930" y2="1370"/>
+      <rect x="1800" y="1420" width="640" height="200"/><line x1="1930" y1="1420" x2="1930" y2="1620"/>
+      <rect x="1800" y="1690" width="640" height="110"/><line x1="1930" y1="1690" x2="1930" y2="1800"/>
+      <rect x="1800" y="1850" width="640" height="110"/><line x1="1930" y1="1850" x2="1930" y2="1960"/>
+    </g>
+
+    <!-- entity labels -->
+    <g font-size="46" text-anchor="middle">
+      <text x="300" y="355">Head</text>
+      <text x="300" y="410">Guard</text>
+      <text x="300" y="890">Administrator</text>
+      <text x="480" y="1265">AI Service</text>
+      <text x="480" y="1330">(Gemini)</text>
+      <text x="300" y="1775">Security</text>
+      <text x="300" y="1830">Personnel</text>
+    </g>
+
+    <!-- process labels -->
+    <g text-anchor="middle">
+      <text x="1160" y="298"  font-size="40">7.1</text>
+      <text x="1160" y="430"  font-size="44">Detect Absent</text>
+      <text x="1160" y="485"  font-size="44">Security Personnel</text>
+
+      <text x="1160" y="708"  font-size="40">7.2</text>
+      <text x="1160" y="840"  font-size="44">Filter Available</text>
+      <text x="1160" y="895"  font-size="44">Security Personnel</text>
+
+      <text x="1160" y="1128" font-size="40">7.3</text>
+      <text x="1160" y="1265" font-size="44">Apply Ranking</text>
+      <text x="1160" y="1320" font-size="44">Criteria &amp;</text>
+      <text x="1160" y="1375" font-size="44">AI Review</text>
+
+      <text x="1160" y="1608" font-size="40">7.4</text>
+      <text x="1160" y="1750" font-size="44">Assign</text>
+      <text x="1160" y="1805" font-size="44">Replacement</text>
+    </g>
+
+    <!-- data store labels -->
+    <g text-anchor="middle">
+      <text x="1865" y="345"  font-size="44">D8</text> <text x="2185" y="345"  font-size="40">Attendance Reports tbl</text>
+      <text x="1865" y="530"  font-size="44">D7</text> <text x="2185" y="530"  font-size="42">Absence Requests tbl</text>
+      <text x="1865" y="750"  font-size="44">D1</text> <text x="2185" y="750"  font-size="46">Employees tbl</text>
+      <text x="1865" y="910"  font-size="44">D6</text> <text x="2185" y="910"  font-size="46">Schedules tbl</text>
+      <text x="1865" y="1115" font-size="44">D12</text><text x="2185" y="1115" font-size="42">Duty Assignments tbl</text>
+      <text x="1865" y="1330" font-size="44">D13</text><text x="2185" y="1330" font-size="44">Cover Offers tbl</text>
+      <text x="1865" y="1535" font-size="44">D9</text> <text x="2185" y="1535" font-size="42">AI Suggestions tbl</text>
+      <text x="1865" y="1760" font-size="44">D10</text><text x="2185" y="1760" font-size="44">Replacements tbl</text>
+      <text x="1865" y="1920" font-size="44">D11</text><text x="2185" y="1920" font-size="44">Notifications tbl</text>
+    </g>
+
+    <!-- ── Data flows ───────────────────────────────────── -->
+    <g fill="none" stroke="#0B0B0C" stroke-width="4" marker-end="url(#ar)">
+      <!-- entities -->
+      <polyline points="480,380 700,380 700,330 900,330"/>
+      <polyline points="900,500 620,500 620,760 480,760"/>
+      <polyline points="480,820 760,820 760,720 900,720"/>
+      <polyline points="900,1160 400,1160 400,1040"/>
+      <polyline points="900,1250 660,1250"/>
+      <polyline points="660,1350 900,1350"/>
+      <polyline points="160,1040 160,1620 900,1620"/>
+      <polyline points="900,1680 240,1680 240,1040"/>
+      <polyline points="900,1800 480,1800"/>
+      <!-- process → process -->
+      <polyline points="1160,570 1160,660"/>
+      <polyline points="1160,980 1160,1080"/>
+      <polyline points="1160,1460 1160,1560"/>
+      <!-- 7.1 ↔ stores -->
+      <polyline points="1420,300 1800,300"/>
+      <polyline points="1800,370 1420,370"/>
+      <polyline points="1800,510 1420,510"/>
+      <!-- 7.2 ← stores -->
+      <polyline points="1800,730 1420,730"/>
+      <polyline points="1800,890 1560,890 1560,830 1420,830"/>
+      <polyline points="1800,1060 1480,1060 1480,940 1420,940"/>
+      <!-- 7.3 ↔ stores -->
+      <polyline points="1800,1310 1420,1310"/>
+      <polyline points="1800,1450 1540,1450 1540,1400 1420,1400"/>
+      <polyline points="1420,1230 2520,1230 2520,1560 2440,1560"/>
+      <!-- 7.4 → stores -->
+      <polyline points="1420,1740 1800,1740"/>
+      <polyline points="1200,1900 1200,2040 1760,2040 1760,1930 1800,1930"/>
+      <polyline points="1300,1900 1300,2120 2580,2120 2580,1100 2440,1100"/>
+      <polyline points="1420,1640 2640,1640 2640,340 2440,340"/>
+    </g>
+
+    <!-- ── Flow labels ──────────────────────────────────── -->
+    <g font-size="32" text-anchor="middle">
+      <!-- entities -->
+      <text x="640" y="362">Report Absence</text>
+      <text x="760" y="482">Absence Alert &amp;</text>
+      <text x="760" y="520">Unread Report</text>
+      <text x="610" y="802">Find Replacement</text>
+      <text x="650" y="1104">Ranked List &amp;</text>
+      <text x="650" y="1142">AI Recommendation</text>
+      <text x="780" y="1194">Shortlist &amp;</text>
+      <text x="780" y="1232">Absence Data</text>
+      <text x="770" y="1440">Recommendation</text>
+      <text x="770" y="1478">&amp; Rationale</text>
+      <text x="560" y="1602">Approve / Assign Replacement</text>
+      <text x="580" y="1662">Applied Replacement Record</text>
+      <text x="690" y="1782">Sudden Duty Call Notice</text>
+      <!-- process → process -->
+      <text x="1190" y="625" text-anchor="start">Absent Personnel &amp; Post</text>
+      <text x="1190" y="1040" text-anchor="start">Eligible Candidates</text>
+      <text x="1190" y="1520" text-anchor="start">Ranked Shortlist</text>
+      <!-- 7.1 -->
+      <text x="1610" y="282">Store Attendance Report</text>
+      <text x="1610" y="412">Absent Records</text>
+      <text x="1610" y="492">Approved Absence</text>
+      <!-- 7.2 -->
+      <text x="1610" y="712">Active Personnel List</text>
+      <text x="1620" y="872">Period Schedules</text>
+      <text x="1640" y="1042">Duty Conflicts</text>
+      <!-- 7.3 -->
+      <text x="1610" y="1292">Active Cover Offers</text>
+      <text x="1620" y="1502">Cached Review</text>
+      <text x="1600" y="1212">Store AI Review</text>
+      <!-- 7.4 -->
+      <text x="1610" y="1722">Store Replacement</text>
+      <text x="1610" y="1622">Stamp Replaced by</text>
+      <text x="1470" y="2022">Create Duty Notification</text>
+      <text x="2020" y="2102">Rewrite Duty Entry (covering for)</text>
+    </g>
+
+  </g>
+</svg>

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'main_layout.dart';
 import 'securityguardui/security_guard_layout.dart';
 import 'headguardui/head_guard_layout.dart';
+import 'official_layout.dart';
 import 'change_password_screen.dart';
 import 'station_selection_screen.dart';
 import '../services/api_service.dart';
@@ -102,6 +103,13 @@ class _AuthScreenState extends State<AuthScreen> {
         (result["preferredStations"] as List?)?.cast<String>() ?? <String>[];
 
     switch (role) {
+      case 'assistantSecurity':
+      case 'areaCommander':
+        await Session.save(username, role);
+        if (!mounted) return;
+        Navigator.pushReplacement(context, MaterialPageRoute(
+          builder: (_) => OfficialLayout(username: username, role: role)));
+        break;
       case 'admin':
         // Remember the session so the app reopens signed in until an
         // explicit Log Out.

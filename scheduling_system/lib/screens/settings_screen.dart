@@ -75,7 +75,8 @@ class _SettingsContentState extends State<SettingsContent> {
   late final _emailCtrl = TextEditingController(text: _savedEmail);
   late final _orgCtrl   = TextEditingController(text: _savedOrg);
   bool _profileSaved = false;
-  String? _profileError;
+  bool _profileSaving = false;
+  String? _profileError = ProfileSettings.loadError;
 
   // Password fields
   final _currentPwCtrl = TextEditingController();
@@ -128,7 +129,8 @@ class _SettingsContentState extends State<SettingsContent> {
   late final _endorsedCtrl = TextEditingController(text: _savedEndorsedBy);
 
   bool _companySaved = false;
-  String? _companyError;
+  bool _companySaving = false;
+  String? _companyError = ProfileSettings.loadError;
 
   // Live counts pulled from the backend for the Company Info panel.
   bool _statsLoading  = true;
@@ -228,6 +230,7 @@ class _SettingsContentState extends State<SettingsContent> {
   }
 
   Future<void> _handleSaveProfile() async {
+    if (_profileSaving) return;
     final name  = _nameCtrl.text.trim();
     final email = _emailCtrl.text.trim();
     final org   = _orgCtrl.text.trim();
@@ -245,19 +248,32 @@ class _SettingsContentState extends State<SettingsContent> {
     }
 
     setState(() {
-      _savedName    = name;
-      _savedEmail   = email;
-      _savedOrg     = org;
       _profileError = null;
-      _profileSaved = true;
+      _profileSaved = false;
+      _profileSaving = true;
     });
-    // Written through so the name sticks after leaving Settings and is what
-    // the report PDF prints under "Prepared by".
-    await ProfileSettings.saveProfile(
-      name: name, email: email, organization: org);
+    try {
+      await ProfileSettings.saveProfile(
+          name: name, email: email, organization: org);
+      if (!mounted) return;
+      setState(() {
+        _savedName = name;
+        _savedEmail = email;
+        _savedOrg = org;
+        _profileSaved = true;
+      });
+    } catch (error) {
+      debugPrint('Saving profile settings failed: $error');
+      if (!mounted) return;
+      setState(() => _profileError =
+          'Could not save your profile on this device. Please try again.');
+    } finally {
+      if (mounted) setState(() => _profileSaving = false);
+    }
   }
 
   Future<void> _handleSaveCompany() async {
+    if (_companySaving) return;
     final company  = _companyCtrl.text.trim();
     final client   = _clientCtrl.text.trim();
     final approved = _approvedCtrl.text.trim();
@@ -274,19 +290,33 @@ class _SettingsContentState extends State<SettingsContent> {
     }
 
     setState(() {
-      _savedCompany    = company;
-      _savedClient     = client;
-      _savedApprovedBy = approved;
-      _savedEndorsedBy = endorsed;
       _companyError    = null;
-      _companySaved    = true;
+      _companySaved    = false;
+      _companySaving   = true;
     });
-    await ProfileSettings.saveCompany(
-      company: company,
-      client: client,
-      approvedBy: approved,
-      endorsedBy: endorsed,
-    );
+    try {
+      await ProfileSettings.saveCompany(
+        company: company,
+        client: client,
+        approvedBy: approved,
+        endorsedBy: endorsed,
+      );
+      if (!mounted) return;
+      setState(() {
+        _savedCompany = company;
+        _savedClient = client;
+        _savedApprovedBy = approved;
+        _savedEndorsedBy = endorsed;
+        _companySaved = true;
+      });
+    } catch (error) {
+      debugPrint('Saving company settings failed: $error');
+      if (!mounted) return;
+      setState(() => _companyError =
+          'Could not save company information on this device. Please try again.');
+    } finally {
+      if (mounted) setState(() => _companySaving = false);
+    }
   }
 
   String _initials(String name) {
@@ -685,13 +715,17 @@ class _SettingsContentState extends State<SettingsContent> {
 
           // Info grid
           _fieldRow(
-            left: _editField('Full Name', _nameCtrl),
+            left: _editField('Full Name', _nameCtrl, enabled: !_profileSaving),
             right: _readOnlyField('Role', 'Supervisor'),
           ),
+          const SizedBox(height: 8),
+          const Text('Save your full name to show it above the administrator '
+              'signature line on exported reports.',
+              style: TextStyle(fontSize: 12, color: _kTextMuted)),
           const SizedBox(height: 20),
           _fieldRow(
-            left: _editField('Email Address', _emailCtrl),
-            right: _editField('Organization', _orgCtrl),
+            left: _editField('Email Address', _emailCtrl, enabled: !_profileSaving),
+            right: _editField('Organization', _orgCtrl, enabled: !_profileSaving),
           ),
           const SizedBox(height: 28),
 
@@ -707,9 +741,9 @@ class _SettingsContentState extends State<SettingsContent> {
           Row(
             children: [
               ElevatedButton.icon(
-                onPressed: _handleSaveProfile,
+                onPressed: _profileSaving ? null : _handleSaveProfile,
                 icon: const Icon(Icons.save_rounded, size: 16),
-                label: const Text('Save Changes'),
+                label: Text(_profileSaving ? 'Saving…' : 'Save Changes'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _kPrimary,
                   foregroundColor: Colors.white,
@@ -1180,8 +1214,8 @@ class _SettingsContentState extends State<SettingsContent> {
           const SizedBox(height: 28),
 
           _fieldRow(
-            left: _editField('Company Name', _companyCtrl),
-            right: _editField('Client', _clientCtrl),
+            left: _editField('Company Name', _companyCtrl, enabled: !_companySaving),
+            right: _editField('Client', _clientCtrl, enabled: !_companySaving),
           ),
           const SizedBox(height: 20),
           _fieldRow(
@@ -1199,18 +1233,18 @@ class _SettingsContentState extends State<SettingsContent> {
           const SizedBox(height: 24),
 
           // ── Report signatories ──
-          const Text('Report Signatories',
+          const Text('Leave Report Signatories',
               style: TextStyle(fontSize: 14,
                   fontWeight: FontWeight.w700, color: _kText)),
           const SizedBox(height: 4),
           const Text('Printed as three evenly spaced signature blocks at the '
-              'bottom of every exported schedule report PDF.',
+              'bottom of exported leave report PDFs. Schedule reports use the recorded approvals from the officials.',
               style: TextStyle(fontSize: 12, color: _kTextMuted)),
           const SizedBox(height: 16),
           _signatoryRow(
             left: _readOnlyField('Prepared By', _savedName),
-            middle: _editField('Approved By', _approvedCtrl),
-            right: _editField('Endorsed By', _endorsedCtrl),
+            middle: _editField('Approved By', _approvedCtrl, enabled: !_companySaving),
+            right: _editField('Endorsed By', _endorsedCtrl, enabled: !_companySaving),
           ),
           const SizedBox(height: 8),
           const Text('Prepared By always follows the name in Profile Settings '
@@ -1230,9 +1264,9 @@ class _SettingsContentState extends State<SettingsContent> {
           Row(
             children: [
               ElevatedButton.icon(
-                onPressed: _handleSaveCompany,
+                onPressed: _companySaving ? null : _handleSaveCompany,
                 icon: const Icon(Icons.save_rounded, size: 16),
-                label: const Text('Save Changes'),
+                label: Text(_companySaving ? 'Saving…' : 'Save Changes'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _kPrimary,
                   foregroundColor: Colors.white,
@@ -1248,7 +1282,7 @@ class _SettingsContentState extends State<SettingsContent> {
               const Expanded(
                 child: Text(
                   'Station and personnel totals are pulled live from the system. '
-                  'Saved signatories apply to every report exported from now on.',
+                  'Saved signatories apply to leave reports. Schedule approval names and dates come from Period Approvals.',
                   style: TextStyle(fontSize: 12, color: _kTextMuted),
                 ),
               ),
@@ -1443,7 +1477,8 @@ class _SettingsContentState extends State<SettingsContent> {
     );
   }
 
-  Widget _editField(String label, TextEditingController ctrl, {String? hint}) {
+  Widget _editField(String label, TextEditingController ctrl,
+      {String? hint, bool enabled = true}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1454,6 +1489,7 @@ class _SettingsContentState extends State<SettingsContent> {
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
+          enabled: enabled,
           style: const TextStyle(fontSize: 13,
               fontWeight: FontWeight.w500, color: _kText),
           decoration: InputDecoration(

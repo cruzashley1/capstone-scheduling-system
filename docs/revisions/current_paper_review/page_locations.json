@@ -1,0 +1,65 @@
+﻿{
+    "page_count":  217,
+    "locations":  [
+                      {
+                          "bookmark":  "ISO_Abstract",
+                          "printed_page":  9,
+                          "physical_page":  9
+                      },
+                      {
+                          "bookmark":  "ISO_Scope",
+                          "printed_page":  11,
+                          "physical_page":  23
+                      },
+                      {
+                          "bookmark":  "ISO_Section37",
+                          "printed_page":  93,
+                          "physical_page":  105
+                      },
+                      {
+                          "bookmark":  "ISO_Method",
+                          "printed_page":  97,
+                          "physical_page":  109
+                      },
+                      {
+                          "bookmark":  "ISO_Analysis",
+                          "printed_page":  100,
+                          "physical_page":  112
+                      },
+                      {
+                          "bookmark":  "ISO_Section41",
+                          "printed_page":  104,
+                          "physical_page":  116
+                      },
+                      {
+                          "bookmark":  "ISO_Results",
+                          "printed_page":  109,
+                          "physical_page":  121
+                      },
+                      {
+                          "bookmark":  "ISO_Table24A",
+                          "printed_page":  110,
+                          "physical_page":  122
+                      },
+                      {
+                          "bookmark":  "ISO_Findings",
+                          "printed_page":  133,
+                          "physical_page":  145
+                      },
+                      {
+                          "bookmark":  "ISO_Conclusion",
+                          "printed_page":  138,
+                          "physical_page":  150
+                      },
+                      {
+                          "bookmark":  "ISO_Recommendation",
+                          "printed_page":  139,
+                          "physical_page":  151
+                      },
+                      {
+                          "bookmark":  "ISO_Reference",
+                          "printed_page":  148,
+                          "physical_page":  160
+                      }
+                  ]
+}

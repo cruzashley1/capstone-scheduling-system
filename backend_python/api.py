@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import db_init
 import passwords
+import workflow_auth
+import schedule_approvals
 # Resolved through db_init so the backend chooses the credential store:
 # supabase_auth when DB_BACKEND=supabase, the offline stand-in otherwise.
 auth = db_init.get_auth()
@@ -229,7 +231,11 @@ def login(request: LoginRequest):
         # 1. First, check the 'users' collection (for Admin)
         user_data = repo.users.get(request.username)
         if user_data is not None:
+            if not user_data.get("active", True):
+                raise HTTPException(status_code=403, detail="This account is inactive.")
             return {
+                "token": workflow_auth.issue_session(repo, request.username, user_data.get("role", "regular")),
+                "name": user_data.get("name") or request.username,
                 "message": "Login successful",
                 "role": user_data.get("role", "regular"), # Admins use the 'role' key
                 "mustChangePassword": False # Admins are never forced to change
@@ -238,7 +244,10 @@ def login(request: LoginRequest):
         # 2. Next, check the 'employees' collection (for Guards/Staff)
         emp_data = repo.employees.get(request.username)
         if emp_data is not None:
+            if not emp_data.get("isActive", True):
+                raise HTTPException(status_code=403, detail="This account is inactive.")
             return {
+                "token": workflow_auth.issue_session(repo, request.username, emp_data.get("type", "regular")),
                 "message": "Login successful",
                 "role": emp_data.get("type", "regular"), # Employees use the 'type' key
                 # Employees must replace their auto-generated password before
@@ -301,6 +310,7 @@ def change_password(request: ChangePasswordRequest):
     try:
         # Update the real login credential
         auth.update_user(request.username, password=new_password)
+        workflow_auth.revoke_sessions(repo, request.username)
 
         # The record keeps only the mask — the new password lives in
         # the credential store and nowhere else.
@@ -311,7 +321,10 @@ def change_password(request: ChangePasswordRequest):
                 "mustChangePassword": False,
             })
 
-        return {"success": True, "message": "Password updated successfully."}
+        role_record = repo.users.get(request.username) or repo.employees.get(request.username) or {}
+        role = role_record.get("role") or role_record.get("type", "regular")
+        return {"success": True, "message": "Password updated successfully.",
+                "token": workflow_auth.issue_session(repo, request.username, role)}
     except HTTPException:
         raise
     except Exception as e:
@@ -2614,6 +2627,9 @@ def get_attendance_reports():
     try:
         reports = sorted(repo.attendance_reports.list(),
                          key=lambda r: r.get("submittedAt", ""), reverse=True)
+        who = workflow_auth.actor_context.get()
+        if who and who["role"] == "headGuard":
+            reports = [r for r in reports if r.get("headGuardId") == who["username"]]
         return {"success": True, "reports": reports}
     except Exception as e:
         raise HTTPException(status_code=500,
@@ -2776,7 +2792,30 @@ def apply_replacement(request: ReplacementApplyRequest):
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     try:
+        who = workflow_auth.actor_context.get()
+        before = next((s for s in repo.schedules.list()
+                       if s.get("stationName") == request.station.strip()
+                       and s.get("startDate", "") <= request.date <= s.get("endDate", "")
+                       and any(e.get("employeeId") == request.absentEmployeeId
+                               for d in s.get("days", []) if d.get("date") == request.date
+                               for e in d.get("entries", []))), None)
+        if who and before:
+            if before.get("status") != "published":
+                raise HTTPException(409, "Emergency replacements require a published schedule.")
+            if before.get("approvalId"):
+                schedule_approvals.current_schedules(repo, schedule_approvals.get(repo, before["approvalId"]))
         record = replacements.apply_replacement(db, request)
+        if who and before:
+            reason = request.reason.strip()
+            if not reason:
+                if request.absenceRequestId:
+                    source = repo.absence_requests.get(request.absenceRequestId) or {}
+                    reason = source.get("reason") or "Approved emergency absence request"
+                else:
+                    reason = "Emergency cover for a reported absence"
+            schedule_approvals.record_emergency(repo, before, record, reason)
+            record.update({"appliedBy": who["username"], "reason": reason})
+            repo.replacements.update(record["id"], {"appliedBy": who["username"], "reason": reason})
         # Stamp any AI review of this absence with who was actually
         # chosen. Agreement between the two is the only honest measure of
         # whether the review is worth showing, and this is the one moment
@@ -2786,6 +2825,8 @@ def apply_replacement(request: ReplacementApplyRequest):
             db, request.date, request.station.strip(), request.shift,
             request.absentEmployeeId, request.replacementEmployeeId)
         return {"success": True, "replacement": record}
+    except HTTPException:
+        raise
     except ValueError as e:      # conflict, or the cover window has shut
         raise HTTPException(status_code=409, detail=str(e))
     except LookupError as e:     # schedule/entry/employee not found
@@ -4220,3 +4261,7 @@ def set_employee_on_leave(employee_id: str, request: AdminLeaveCreateRequest):
         notif_type="approved")
 
     return {"success": True, "request": record, "impact": impact}
+
+# Installed last so existing schedule mutation routes share workflow rules.
+import workflow_api
+workflow_api.install(app, globals())

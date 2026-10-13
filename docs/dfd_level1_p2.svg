@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1560" width="2400" height="1560" role="img" aria-label="Data Flow Diagram Level 1, sheet 2 of 4: Schedule Management.">
+  <defs>
+    <marker id="ar" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#0B0B0C"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="2400" height="1560" fill="#FFFFFF"/>
+
+  <g font-family="'Segoe UI','Nunito Sans','Trebuchet MS',system-ui,sans-serif" fill="#0B0B0C">
+
+    <text x="1200" y="102" font-size="62" font-weight="700" text-anchor="middle">Data Flow Diagram Level 1</text>
+
+    <g fill="none" stroke="#0B0B0C" stroke-width="4">
+      <!-- entities -->
+      <rect x="120" y="300"  width="360" height="340"/>
+      <rect x="120" y="900"  width="360" height="180"/>
+      <rect x="120" y="1180" width="360" height="180"/>
+      <!-- process -->
+      <rect x="950" y="550" width="470" height="350" rx="40"/>
+      <line x1="950" y1="618" x2="1420" y2="618"/>
+      <!-- data stores -->
+      <rect x="1700" y="570"  width="580" height="110"/><line x1="1830" y1="570"  x2="1830" y2="680"/>
+      <rect x="1700" y="700"  width="580" height="110"/><line x1="1830" y1="700"  x2="1830" y2="810"/>
+      <rect x="1700" y="830"  width="580" height="110"/><line x1="1830" y1="830"  x2="1830" y2="940"/>
+      <rect x="1700" y="1010" width="580" height="110"/><line x1="1830" y1="1010" x2="1830" y2="1120"/>
+      <rect x="1700" y="1190" width="580" height="110"/><line x1="1830" y1="1190" x2="1830" y2="1300"/>
+      <rect x="1700" y="1370" width="580" height="110"/><line x1="1830" y1="1370" x2="1830" y2="1480"/>
+    </g>
+
+    <g font-size="46" text-anchor="middle">
+      <text x="300" y="485">Administrator</text>
+      <text x="300" y="970">Head</text>
+      <text x="300" y="1025">Guard</text>
+      <text x="300" y="1250">Security</text>
+      <text x="300" y="1305">Personnel</text>
+    </g>
+
+    <g text-anchor="middle">
+      <text x="1185" y="598" font-size="40">4.0</text>
+      <text x="1185" y="742" font-size="44">Schedule</text>
+      <text x="1185" y="797" font-size="44">Management</text>
+    </g>
+
+    <g text-anchor="middle">
+      <text x="1765" y="642"  font-size="44">D1</text><text x="2075" y="642"  font-size="44">Employees tbl</text>
+      <text x="1765" y="772"  font-size="44">D2</text><text x="2075" y="772"  font-size="44">Stations tbl</text>
+      <text x="1765" y="902"  font-size="44">D4</text><text x="2075" y="902"  font-size="34">Special Assignments tbl</text>
+      <text x="1765" y="1082" font-size="44">D5</text><text x="2075" y="1082" font-size="32">Rotation Assignments tbl</text>
+      <text x="1765" y="1262" font-size="44">D6</text><text x="2075" y="1262" font-size="44">Schedules tbl</text>
+      <text x="1765" y="1442" font-size="44">D11</text><text x="2075" y="1442" font-size="42">Notifications tbl</text>
+    </g>
+
+    <g fill="none" stroke="#0B0B0C" stroke-width="4" marker-end="url(#ar)">
+      <!-- administrator -->
+      <polyline points="480,420 780,420 780,590 950,590"/>
+      <polyline points="480,500 700,500 700,700 950,700"/>
+      <polyline points="950,570 850,570 850,340 480,340"/>
+      <!-- personnel -->
+      <polyline points="950,790 640,790 640,950 480,950"/>
+      <polyline points="950,860 730,860 730,1230 480,1230"/>
+      <!-- stores read -->
+      <polyline points="1700,625 1420,625"/>
+      <polyline points="1700,755 1420,755"/>
+      <polyline points="1700,870 1420,870"/>
+      <!-- stores written / read back -->
+      <polyline points="1380,900 1380,1065 1700,1065"/>
+      <polyline points="1850,1120 1850,1160 1300,1160 1300,900"/>
+      <polyline points="1220,900 1220,1245 1700,1245"/>
+      <polyline points="1850,1300 1850,1340 1140,1340 1140,900"/>
+      <polyline points="1060,900 1060,1425 1700,1425"/>
+    </g>
+
+    <g font-size="32" text-anchor="middle">
+      <text x="630" y="402">Generate Schedule</text>
+      <text x="825" y="682">Edit &amp; Publish</text>
+      <text x="665" y="322">Draft Schedule &amp; Notes</text>
+      <text x="760" y="824">Schedule &amp; Duty Roster</text>
+      <text x="710" y="1020" text-anchor="end">Bi-weekly</text>
+      <text x="710" y="1056" text-anchor="end">Schedule</text>
+      <text x="1560" y="607">Personnel Pool</text>
+      <text x="1560" y="737">Required Posts</text>
+      <text x="1560" y="852">Pinned Guards</text>
+      <text x="1540" y="993">Store Monthly</text>
+      <text x="1540" y="1029">Placement</text>
+      <text x="1575" y="1142">Previous Placement</text>
+      <text x="1460" y="1227">Store Duty Assignments</text>
+      <text x="1495" y="1322">Published Schedule</text>
+      <text x="1380" y="1407">Create Notification</text>
+    </g>
+
+  </g>
+</svg>

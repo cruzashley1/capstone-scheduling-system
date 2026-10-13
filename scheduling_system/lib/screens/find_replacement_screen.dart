@@ -1,3 +1,4 @@
+import '../widgets/controller_dialog.dart';
 // screens/find_replacement_screen.dart
 //
 // "Show List of Suitable Replacement" step of the absence flow.
@@ -210,14 +211,18 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
     final prep = _prep;
     final retimed = prep != null && prep.adjusted;
 
-    final confirmed = await showDialog<bool>(
+    final reasonController = TextEditingController();
+    final reasonForm = GlobalKey<FormState>();
+    final confirmed = await showControllerDialog<bool>(
       context: context,
+      controllers: [reasonController],
       builder: (dialogContext) => AlertDialog(
+        scrollable: true,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: Text(_req.isApprovalFlow
             ? 'Approve absence & assign cover'
             : 'Assign Replacement'),
-        content: Text(
+        content: SizedBox(width: 480, child: Form(key: reasonForm, child: Column(mainAxisSize: MainAxisSize.min, children: [Text(
           'Assign ${candidate.employee.name} to cover '
           '${_req.absentName}\'s ${_req.shift} shift at ${_req.station} '
           'on ${_req.date}?\n\n'
@@ -227,17 +232,22 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
               'then an hour of extension. They will be told to be at '
               '${_req.station} by ${prep.reportBy}.\n\n' : ''}'
           'The schedule will be updated and '
-          '${candidate.employee.name} will be notified.'
+          '${candidate.employee.name} will be notified. For an approved period, this is recorded as an emergency amendment and both officials are notified.'
           '${_req.isApprovalFlow ? '\n\n${_req.absentName}\'s absence request '
               'will be approved.' : ''}',
         ),
+          const SizedBox(height: 16),
+          TextFormField(controller: reasonController, maxLines: 2, maxLength: 2000,
+            decoration: const InputDecoration(labelText: 'Reason for replacement', hintText: 'For example: guard reported sick', border: OutlineInputBorder()),
+            validator: (value) => value == null || value.trim().isEmpty ? 'Enter the reason for this change.' : null),
+        ]))),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
+            onPressed: () { if (reasonForm.currentState!.validate()) Navigator.pop(dialogContext, true); },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF1034A6),
               foregroundColor: Colors.white,
@@ -247,6 +257,7 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
         ],
       ),
     );
+    final reason = reasonController.text.trim();
     if (confirmed != true || !mounted) return;
 
     setState(() => _isApplying = true);
@@ -260,6 +271,7 @@ class _FindReplacementScreenState extends State<FindReplacementScreen> {
       replacementEmployeeId: candidate.employee.id,
       reportId: _req.reportId,
       absenceRequestId: _req.absenceRequestId,
+      reason: reason,
     );
     if (!mounted) return;
 

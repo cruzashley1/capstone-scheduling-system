@@ -6,6 +6,7 @@ import 'package:printing/printing.dart';
 import '../models/leave_request.dart';
 import '../models/replacement.dart';
 import '../models/schedule.dart';
+import '../models/schedule_approval.dart';
 import '../services/api_service.dart';
 import '../services/profile_settings.dart';
 import 'main_layout.dart';
@@ -451,7 +452,8 @@ class _ReportsContentState extends State<ReportsContent> {
   _ReportData _data = _ReportData.empty;
 
   // Sample data is only shown when the backend has nothing to offer.
-  bool get _usingSampleData => _schedules.isEmpty;
+  bool get _usingSampleData => false;
+  bool _exporting = false;
 
   // ── Leave report ──
   // A second report behind the same page chrome, switched by the segment
@@ -662,9 +664,12 @@ class _ReportsContentState extends State<ReportsContent> {
     }
   }
 
-  String get _printedDate {
-    final n = DateTime.now();
-    return '${_kMonths[n.month]} ${n.day}, ${n.year}';
+  String _printedDateTime(DateTime printedAt) {
+    String twoDigits(int value) => value.toString().padLeft(2, '0');
+    return '${printedAt.year.toString().padLeft(4, '0')}-'
+        '${twoDigits(printedAt.month)}-${twoDigits(printedAt.day)} '
+        '${twoDigits(printedAt.hour)}:${twoDigits(printedAt.minute)}:'
+        '${twoDigits(printedAt.second)}';
   }
 
   // ── Export confirmation flow ──────────────────
@@ -751,53 +756,41 @@ class _ReportsContentState extends State<ReportsContent> {
   }
 
   Future<void> _confirmExport({required bool exportAll}) async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
     try {
-      final doc = pw.Document();
-      int pagesAdded = 0;
-
-      if (exportAll) {
-        for (final st in _stations) {
-          final sched = _scheduleFor(st, _period);
-          if (sched != null) {
-            _addStationPages(doc, st.label,
-                _reportFromSchedule(sched, _absencesFor(st.name, _period)));
-            pagesAdded++;
-          } else if (_usingSampleData) {
-            _addStationPages(doc, st.label, _sampleReport(_period));
-            pagesAdded++;
-          }
-        }
-      } else {
-        if (!_data.isEmpty) {
-          _addStationPages(doc, _station.label, _data);
-          pagesAdded++;
-        }
-      }
-
-      if (pagesAdded == 0) {
-        _showSnack('Nothing to export — no schedule found for ${_period.label}.',
-            success: false);
+      // Fetch the authorized roster and approval evidence together. Never
+      // export a stale screen or sample data as an approved schedule.
+      final result = await ApiService.workflow('/schedule-report', method: 'POST', body: {
+        'startDate': _period.start.toIso8601String().substring(0, 10),
+        'endDate': _period.end.toIso8601String().substring(0, 10),
+        if (!exportAll) 'stationId': _activeSchedule?.stationId,
+      });
+      if (!mounted) return;
+      if (result['success'] != true) {
+        _showSnack(result['error'].toString(), success: false);
+        await _loadSchedules();
         return;
       }
-
-      final periodSlug = _period.label
-          .toLowerCase()
-          .replaceAll(RegExp(r'[^a-z0-9]+'), '-');
-      final stationSlug = exportAll
-          ? 'all-stations'
-          : _station.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
-
-      await Printing.sharePdf(
-        bytes: await doc.save(),
-        filename: 'schedule-report-$stationSlug-$periodSlug.pdf',
-      );
-      if (!mounted) return;
-      _showSnack(exportAll
-          ? 'PDF generated for $pagesAdded station${pagesAdded == 1 ? '' : 's'} — ${_period.label}'
-          : 'PDF generated — ${_station.name}  ·  ${_period.label}');
+      final approval = Map<String, dynamic>.from(result['approval']);
+      final schedules = approvalMaps(result['schedules']).map(Schedule.fromJson).toList();
+      _replacements = approvalMaps(result['replacements']).map(AppliedReplacement.fromJson).toList();
+      final doc = pw.Document();
+      final printedAt = DateTime.now().toUtc().add(const Duration(hours: 8));
+      for (final schedule in schedules) {
+        _addStationPages(doc, schedule.stationName,
+          _reportFromSchedule(schedule, _absencesFor(schedule.stationName, _period)),
+          printedAt: printedAt, preparedBy: approval['submittedName'], approval: approval);
+      }
+      if (schedules.isEmpty) { _showSnack('No approved schedules to export.', success: false); return; }
+      final stationSlug = exportAll ? 'all-stations' : _station.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+      await Printing.sharePdf(bytes: await doc.save(),
+        filename: 'schedule-report-$stationSlug-${approval['startDate']}-revision-${approval['revision']}.pdf');
+      if (mounted) _showSnack('Approved PDF generated for ${schedules.length} station(s).');
     } catch (e) {
-      if (!mounted) return;
-      _showSnack('Failed to generate PDF: $e', success: false);
+      if (mounted) _showSnack('Failed to generate PDF: $e', success: false);
+    } finally {
+      if (mounted) setState(() => _exporting = false);
     }
   }
 
@@ -834,8 +827,25 @@ class _ReportsContentState extends State<ReportsContent> {
   static String _pdfSafe(String s) =>
       s.replaceAll('–', '-').replaceAll('—', '-');
 
+  pw.Widget _pdfPrintedAt(DateTime printedAt) {
+    return pw.Text(
+      'Printed: ${_printedDateTime(printedAt)}',
+      style: pw.TextStyle(
+        fontSize: 12,
+        fontWeight: pw.FontWeight.bold,
+        color: PdfColors.black,
+      ),
+    );
+  }
+
   void _addStationPages(
-      pw.Document doc, String stationLabel, _ReportData data) {
+    pw.Document doc,
+    String stationLabel,
+    _ReportData data, {
+    required DateTime printedAt,
+    required String preparedBy,
+    required Map<String, dynamic> approval,
+  }) {
     doc.addPage(pw.MultiPage(
       pageFormat: PdfPageFormat.a4.landscape,
       margin: const pw.EdgeInsets.fromLTRB(28, 28, 28, 32),
@@ -869,12 +879,13 @@ class _ReportsContentState extends State<ReportsContent> {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text(stationLabel,
-                style: pw.TextStyle(
-                    fontSize: 10, fontWeight: pw.FontWeight.bold)),
-            pw.Text(_pdfSafe('${_period.label}   ·   Printed: $_printedDate'),
-                style: const pw.TextStyle(
-                    fontSize: 8, color: PdfColors.grey700)),
+            pw.Expanded(
+              child: pw.Text(stationLabel,
+                  style: pw.TextStyle(
+                      fontSize: 10, fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.SizedBox(width: 16),
+            _pdfPrintedAt(printedAt),
           ],
         ),
         pw.SizedBox(height: 10),
@@ -890,17 +901,44 @@ class _ReportsContentState extends State<ReportsContent> {
         pw.SizedBox(height: 4),
         _pdfAbsenceTable(data.absences),
 
-        _pdfSignatureBlock(),
+        pw.SizedBox(height: 12),
+        pw.Text('Approval reference: ${approval['id']} | Revision ${approval['revision']} | '
+            '${approval['startDate']} to ${approval['endDate']}', style: const pw.TextStyle(fontSize: 8)),
+        if (approvalMaps(approval['amendments']).isNotEmpty)
+          pw.Text('Amended after approval: ${approvalMaps(approval['amendments']).length} emergency replacement(s) in this period. '
+              'Original approvals apply to the submitted roster; later replacements are recorded separately.',
+              style: const pw.TextStyle(fontSize: 8, color: PdfColors.orange900)),
+        _pdfApprovalSignatures(preparedBy, approval),
       ],
     ));
+  }
+
+  pw.Widget _pdfApprovalSignatures(String preparedBy, Map<String, dynamic> approval) {
+    final decisions = approvalMaps(approval['events']).where((e) => e['action'] == 'approve').toList();
+    pw.Widget signature(String title, String name, String role, String time) => pw.Expanded(
+      child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+        pw.Text(title, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 14), pw.Text(_pdfSafe(name), style: const pw.TextStyle(fontSize: 10)),
+        pw.Divider(), pw.Text(role, style: const pw.TextStyle(fontSize: 8)),
+        pw.Text(time, style: const pw.TextStyle(fontSize: 7)),
+      ]));
+    return pw.Padding(padding: const pw.EdgeInsets.only(top: 24), child: pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+      signature('Prepared by', preparedBy, 'Administrator', approvalTime(approval['submittedAt'])),
+      for (final role in ['assistantSecurity', 'areaCommander']) ...[
+        pw.SizedBox(width: 32),
+        signature(role == 'assistantSecurity' ? 'Approved by' : 'Final approval by',
+          decisions.firstWhere((e) => e['role'] == role)['name'], officialRoleLabel(role),
+          approvalTime(decisions.firstWhere((e) => e['role'] == role)['at'])),
+      ],
+    ]));
   }
 
   // Closes the report with three evenly spaced signature blocks. "Prepared
   // by" is the profile name of whoever produced the schedule (Settings →
   // Profile); the other two come from Settings → Company Info.
-  pw.Widget _pdfSignatureBlock() {
+  pw.Widget _pdfSignatureBlock(String preparedBy) {
     final signatories = <(String, String)>[
-      ('Prepared by:', ProfileSettings.preparedBy),
+      ('Prepared By:', preparedBy),
       ('Approved by:', ProfileSettings.approvedBy.value),
       ('Endorsed by:', ProfileSettings.endorsedBy.value),
     ];
@@ -913,7 +951,11 @@ class _ReportsContentState extends State<ReportsContent> {
             // Kept well apart so the three blocks never read as one line.
             if (i > 0) pw.SizedBox(width: 48),
             pw.Expanded(
-              child: _pdfSignatory(signatories[i].$1, signatories[i].$2),
+              child: _pdfSignatory(
+                signatories[i].$1,
+                signatories[i].$2,
+                role: i == 0 ? 'Administrator' : null,
+              ),
             ),
           ],
         ],
@@ -921,22 +963,40 @@ class _ReportsContentState extends State<ReportsContent> {
     );
   }
 
-  pw.Widget _pdfSignatory(String label, String name) {
+  pw.Widget _pdfSignatory(String label, String name, {String? role}) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
         pw.Text(label,
             style: pw.TextStyle(
                 fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
-        // Room to sign above the line.
-        pw.SizedBox(height: 30),
+        // The administrator's saved name sits above the signature line;
+        // the other signatories retain their current layout.
+        if (role != null)
+          pw.Container(
+            constraints: const pw.BoxConstraints(minHeight: 30),
+            alignment: pw.Alignment.bottomCenter,
+            padding: const pw.EdgeInsets.only(top: 8, bottom: 4),
+            child: pw.Text(_pdfSafe(name),
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.black)),
+          )
+        else
+          pw.SizedBox(height: 30),
         pw.Container(height: 0.7, color: PdfColors.grey700),
         pw.SizedBox(height: 4),
         pw.Center(
-          child: pw.Text(_pdfSafe(name),
+          child: pw.Text(_pdfSafe(role ?? name),
               textAlign: pw.TextAlign.center,
               style: pw.TextStyle(
-                  fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
+                  fontSize: 10.5,
+                  fontWeight: role == null
+                      ? pw.FontWeight.bold
+                      : pw.FontWeight.normal,
+                  color: PdfColors.black)),
         ),
       ],
     );
@@ -1169,90 +1229,34 @@ class _ReportsContentState extends State<ReportsContent> {
 
   // ── Top bar ───────────────────────────────────
   Widget _buildTopBar() {
+    Widget field(String label, Widget control) => Row(mainAxisSize: MainAxisSize.min, children: [
+      Text(label, style: const TextStyle(fontSize: 12, color: _kTextMuted, fontWeight: FontWeight.w600)),
+      const SizedBox(width: 8), control,
+    ]);
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 14, 24, 14),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: _kBorder)),
-      ),
-      child: Row(
-        children: [
-          // Which report is on screen. Everything to the right of this
-          // belongs to whichever one is selected.
-          _buildReportSwitch(),
-          const SizedBox(width: 24),
-          if (!_onLeaveReport) ...[
-            const Text('Station',
-                style: TextStyle(fontSize: 12,
-                    color: _kTextMuted, fontWeight: FontWeight.w600)),
-            const SizedBox(width: 8),
-            _buildDropdown<StationInfo>(
-              value: _station, width: 240,
-              items: _stations.map((s) => DropdownMenuItem(
-                value: s,
-                child: Text(s.label, overflow: TextOverflow.ellipsis),
-              )).toList(),
-              onChanged: (s) => setState(() {
-                _station = s!;
-                _refreshData();
-              }),
-            ),
-            const SizedBox(width: 16),
-            const Text('Period',
-                style: TextStyle(fontSize: 12,
-                    color: _kTextMuted, fontWeight: FontWeight.w600)),
-            const SizedBox(width: 8),
-            _buildDropdown<ReportPeriod>(
-              value: _period, width: 210,
-              items: _periods.map((p) => DropdownMenuItem(
-                value: p,
-                child: Text(p.label, overflow: TextOverflow.ellipsis),
-              )).toList(),
-              onChanged: (p) => setState(() {
-                _period = p!;
-                _refreshData();
-              }),
-            ),
-          ] else ...[
-            const Text('Year',
-                style: TextStyle(fontSize: 12,
-                    color: _kTextMuted, fontWeight: FontWeight.w600)),
-            const SizedBox(width: 8),
-            _buildDropdown<int>(
-              value: _leaveYear, width: 120,
-              items: _leaveYears.map((y) => DropdownMenuItem(
-                value: y,
-                child: Text('$y', overflow: TextOverflow.ellipsis),
-              )).toList(),
-              onChanged: (y) => setState(() => _leaveYear = y!),
-            ),
-            const SizedBox(width: 16),
-            const Text('Status',
-                style: TextStyle(fontSize: 12,
-                    color: _kTextMuted, fontWeight: FontWeight.w600)),
-            const SizedBox(width: 8),
-            _buildDropdown<String>(
-              value: _leaveStatus, width: 160,
-              items: _kLeaveStatuses.map((s) => DropdownMenuItem(
-                value: s,
-                child: Text(s, overflow: TextOverflow.ellipsis),
-              )).toList(),
-              onChanged: (s) => setState(() => _leaveStatus = s!),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: _loadLeaves,
-              tooltip: 'Refresh',
-              icon: const Icon(Icons.refresh_rounded,
-                  color: _kAccent, size: 20),
-            ),
-          ],
-          const Spacer(),
-          _onLeaveReport
-              ? _buildLeaveExportButton()
-              : _buildExportSplitButton(),
+      decoration: const BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: _kBorder))),
+      child: Wrap(spacing: 20, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        _buildReportSwitch(),
+        if (!_onLeaveReport) ...[
+          field('Station', _buildDropdown<StationInfo>(value: _station, width: 240,
+            items: _stations.map((s) => DropdownMenuItem(value: s, child: Text(s.label, overflow: TextOverflow.ellipsis))).toList(),
+            onChanged: (value) => setState(() { _station = value!; _refreshData(); }))),
+          field('Period', _buildDropdown<ReportPeriod>(value: _period, width: 210,
+            items: _periods.map((p) => DropdownMenuItem(value: p, child: Text(p.label, overflow: TextOverflow.ellipsis))).toList(),
+            onChanged: (value) => setState(() { _period = value!; _refreshData(); }))),
+          _buildExportSplitButton(),
+        ] else ...[
+          field('Year', _buildDropdown<int>(value: _leaveYear, width: 120,
+            items: _leaveYears.map((y) => DropdownMenuItem(value: y, child: Text('$y'))).toList(),
+            onChanged: (value) => setState(() => _leaveYear = value!))),
+          field('Status', _buildDropdown<String>(value: _leaveStatus, width: 160,
+            items: _kLeaveStatuses.map((status) => DropdownMenuItem(value: status, child: Text(status))).toList(),
+            onChanged: (value) => setState(() => _leaveStatus = value!))),
+          IconButton(onPressed: _loadLeaves, tooltip: 'Refresh', icon: const Icon(Icons.refresh_rounded, color: _kAccent)),
+          _buildLeaveExportButton(),
         ],
-      ),
+      ]),
     );
   }
 
@@ -1725,6 +1729,11 @@ class _ReportsContentState extends State<ReportsContent> {
 
   // ── Export split button (PopupMenuButton style) ──
   Widget _buildExportSplitButton() {
+    if (_activeSchedule?.canExport != true || _loading || _loadError != null || _exporting) {
+      return Tooltip(message: _exporting ? 'Preparing approved PDF' : 'Both officials must approve the period before export.',
+        child: OutlinedButton.icon(onPressed: null, icon: const Icon(Icons.lock_outline),
+          label: Text(_exporting ? 'Preparing PDF' : 'Awaiting Approval')));
+    }
     return Container(
       height: 42,
       decoration: BoxDecoration(
@@ -2284,7 +2293,8 @@ class _ReportsContentState extends State<ReportsContent> {
 
     try {
       final doc = pw.Document();
-      _addLeavePages(doc, rows);
+      _addLeavePages(doc, rows,
+          printedAt: DateTime.now(), preparedBy: ProfileSettings.preparedBy);
       final statusSlug = _leaveStatus == 'All'
           ? 'all'
           : _leaveStatus.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
@@ -2301,7 +2311,12 @@ class _ReportsContentState extends State<ReportsContent> {
     }
   }
 
-  void _addLeavePages(pw.Document doc, List<LeaveRequest> rows) {
+  void _addLeavePages(
+    pw.Document doc,
+    List<LeaveRequest> rows, {
+    required DateTime printedAt,
+    required String preparedBy,
+  }) {
     final employees = rows.map((l) => l.employeeId).toSet().length;
     final approvedDays = rows
         .where((l) => l.isApproved)
@@ -2339,14 +2354,15 @@ class _ReportsContentState extends State<ReportsContent> {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text(
-                'Year $_leaveYear'
-                '${_leaveStatus == 'All' ? '' : '   -   $_leaveStatus only'}',
-                style: pw.TextStyle(
-                    fontSize: 10, fontWeight: pw.FontWeight.bold)),
-            pw.Text(_pdfSafe('Printed: $_printedDate'),
-                style: const pw.TextStyle(
-                    fontSize: 8, color: PdfColors.grey700)),
+            pw.Expanded(
+              child: pw.Text(
+                  'Year $_leaveYear'
+                  '${_leaveStatus == 'All' ? '' : '   -   $_leaveStatus only'}',
+                  style: pw.TextStyle(
+                      fontSize: 10, fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.SizedBox(width: 16),
+            _pdfPrintedAt(printedAt),
           ],
         ),
         pw.SizedBox(height: 4),
@@ -2411,7 +2427,7 @@ class _ReportsContentState extends State<ReportsContent> {
         // out rather than left as a name in a column.
         ..._pdfEndorsementNotes(rows),
 
-        _pdfSignatureBlock(),
+        _pdfSignatureBlock(preparedBy),
       ],
     ));
   }

@@ -1,0 +1,123 @@
+{
+  "basis": "User-supplied historical test-table screenshots and inspection of the corresponding local test code. No application tests were executed for this document update.",
+  "cases": [
+    {
+      "original_id": "TC020",
+      "combined_id": "TC007",
+      "module": "Absence Handling",
+      "condition": "Report an absence; screen unavailable, on-duty, absent, or shift/post-ineligible guards and rank eligible candidates.",
+      "expected": "Ineligible guards are excluded; eligible guards are scored using familiarity, personnel type, workload, and declared availability.",
+      "actual": "The past record reports that eligibility screening and scoring produced the expected replacement shortlist.",
+      "mapping": "Functional correctness (replacement workflow)",
+      "status": "Passed",
+      "scope": "Historical scenario result. This establishes the reported screening/scoring outcome, not the quality of a live model's preferred guard. Execution date and build were not supplied with the result."
+    },
+    {
+      "original_id": "TC021",
+      "combined_id": "TC012",
+      "module": "AI Context Construction",
+      "condition": "Construct the AI context from the eligible shortlist and inspect its fields and JSON serialization.",
+      "expected": "The context contains the intended ranking inputs, excludes the specifically checked credential/contact/government-ID fields, and serializes to JSON.",
+      "actual": "The past record reports a passing context suite. Checked excluded fields were absent and the context was JSON-serializable. Names, employee IDs, and an absence reason can still be included.",
+      "mapping": "Functional correctness (context construction)",
+      "status": "Passed",
+      "scope": "testing_ai_context.py uses a temporary mock database without a model call (18 checks across the suite). Replace the broad 'No personal data' claim: names and IDs remain, and a reason can be included. The field-set assertion rejects extra keys on the first candidate; it does not prove complete field equality for every candidate."
+    },
+    {
+      "original_id": "TC022",
+      "combined_id": "TC013",
+      "module": "AI Unavailability / Fallback",
+      "condition": "Disable AI review or simulate an enabled reviewer returning no usable review.",
+      "expected": "No AI recommendation is returned; rule-based suggestions remain available; an unsuccessful review is not cached as a valid recommendation.",
+      "actual": "The past record reports a passing fallback result. The reviewed script covers disabled review and a simulated unavailable result; it checks candidate count after disabling AI and absence of a cached failed review.",
+      "mapping": "Robustness (AI-assisted workflow)",
+      "status": "Passed",
+      "scope": "testing_ai_review.py stubs the model. Its 18 checks also cover caching and decision recording. The supplied row lists missing key, quota, timeout, and malformed output, but this script does not separately inject those failures or compare the complete ranking before and after each failure. Such stronger claims need their own execution evidence."
+    },
+    {
+      "original_id": "TC023",
+      "combined_id": "TC014",
+      "module": "AI Cache / Decision Record",
+      "condition": "Reopen a reviewed absence with unchanged ranking inputs, change a candidate's recent cover load, and record a different administrator choice.",
+      "expected": "Unchanged context reuses the review; relevant input changes request a new review; the recorded administrator choice may differ from the recommendation.",
+      "actual": "The past record reports cache reuse, invalidation after relevant input changes, and administrator-decision recording. The script checks these through simulated reviews and a direct decision-recording call.",
+      "mapping": "Functional correctness; user controllability (decision record only)",
+      "status": "Passed",
+      "scope": "Same 18-check testing_ai_review.py suite as TC022; do not count it twice as two distinct sets of 18 checks. One model request applies to repeated opens with unchanged ranking context. A changed context can require another call. Direct record_decision() testing does not establish the complete select/cancel/confirm UI workflow."
+    },
+    {
+      "original_id": "TC024",
+      "combined_id": "TC015",
+      "module": "Replacement Preparation Window",
+      "condition": "Assign short-notice cover after a post has started, and compare a case that requires no preparation adjustment.",
+      "expected": "Where required, cover hours allow preparation/travel and the notification states adjusted and original post hours; otherwise hours remain unadjusted.",
+      "actual": "The past record reports correct adjusted cover hours and notification details, with no adjustment when it was unnecessary.",
+      "mapping": "Functional correctness (replacement workflow)",
+      "status": "Passed",
+      "scope": "Historical TC024 cites 30 checks. This is supporting replacement-workflow evidence; it is not a live-model reasoning test. Preserve the original run log, date, and build when available."
+    },
+    {
+      "original_id": "TC025",
+      "combined_id": "TC016",
+      "module": "Expired Replacement Window",
+      "condition": "Attempt cover after the post has ended; compare a post whose cover window is still open.",
+      "expected": "An ended post is refused with a clear reason, no schedule change, and no replacement notification; an open post remains eligible for cover.",
+      "actual": "The past record reports refusal of ended posts with no schedule update or notification, while open-window cover remained available.",
+      "mapping": "Functional correctness (replacement workflow)",
+      "status": "Passed",
+      "scope": "Historical TC025 cites 25 checks. The result concerns the application's time-window constraints, not the model's ability to choose a guard. Preserve the original run log, date, and build when available."
+    },
+    {
+      "original_id": "TC026",
+      "combined_id": "TC017",
+      "module": "Find Replacement Window",
+      "condition": "Open Find Replacement before the cover deadline and attempt to act at or after the deadline.",
+      "expected": "Replacement selection is available while the cover window is open and closes when the post times out.",
+      "actual": "The past record reports that the replacement action remained available before the deadline and closed at timeout.",
+      "mapping": "Functional correctness (replacement workflow)",
+      "status": "Passed",
+      "scope": "Historical TC026 cites 24 cases. Retain its execution evidence; the case total should not be described as live AI trials."
+    },
+    {
+      "original_id": "TC034",
+      "combined_id": "TC018",
+      "module": "AI Review Panel",
+      "condition": "Render the AI review panel with no review and with loading complete.",
+      "expected": "The panel occupies zero space and displays no AI recommendation when no review is available.",
+      "actual": "The past record reports no panel content and zero layout space for a null review.",
+      "mapping": "Transparency (absence of AI advice)",
+      "status": "Passed",
+      "scope": "ai_review_panel_test.dart contains 17 tests across the whole panel/model suite. The null-review check is one of them, not 17 separate null-review cases. Supplied test responses can establish display behavior but cannot establish factual accuracy of a live explanation."
+    }
+  ],
+  "observation_protocol": [
+    {
+      "id": "TC010",
+      "title": "Check the AI explanation against its inputs",
+      "setup": "Use an isolated test environment with fictitious guards, one absent guard, and at least two rule-eligible alternatives. Use a duty date/time whose cover window is still open. Give the alternatives different, known station familiarity and recent cover counts. Record the build and take a snapshot of the input records.",
+      "steps": [
+        "Open the absence's Find Replacement screen. Obtain a fresh live AI review. Record the response source, model/prompt version where available, and the exact context sent to the model. A cached response is not a new live trial; a simulated response is only a display test.",
+        "Save the raw review and a screenshot of the AI Recommendation panel. Record the recommended and runner-up IDs, rationale, and any risk/trade-off text. Compare the displayed text with the returned review.",
+        "List each factual claim in the explanation and match it to the context and underlying records. For example, a claim of two recent covers must match coversLast30Days = 2. Claims about rest, availability, or familiarity also need supporting inputs; record unsupported claims as such.",
+        "Record whether the panel clearly labels AI advice. In a separate run, disable AI or use a controlled unavailable response in the test environment; inspect whether the AI panel disappears and rule-based candidates remain usable. Label this run disabled/simulated/unavailable as appropriate.",
+        "Complete the observation sheet. Pass only if every applicable criterion is met: supported factual claims, faithful display, clear AI labeling, and usable fallback without a false AI recommendation. An observed mismatch is Failed; a missing live review or missing input capture leaves the relevant part Not assessed."
+      ],
+      "evidence": "Input/context snapshot; raw review; labeled-panel screenshot; claim-by-claim comparison; disabled/unavailable screenshot; date/time, observer, build, and AI mode for each run.",
+      "limit": "One successful observation supports that scenario only. For broader evidence, predefine contrasting scenarios and report all their outcomes; no particular sample count is asserted here as an ISO requirement."
+    },
+    {
+      "id": "TC011",
+      "title": "Check administrator choice, cancellation, and confirmation",
+      "setup": "Use an isolated test absence with an open cover window, at least two eligible guards, and a displayed recommendation. Call the recommended guard A and another eligible guard B. A controlled simulated review is acceptable for this workflow check if its mode is recorded. Capture the initial schedule, replacement record, relevant absence status, and test notification count.",
+      "steps": [
+        "Open Find Replacement and record the AI-recommended guard A. Verify that simply opening/viewing the recommendation has not assigned a replacement or changed the schedule.",
+        "Choose eligible guard B from the candidate list. Capture the confirmation dialog naming B. Before confirming, verify that the schedule and replacement assignment remain unchanged.",
+        "Click Cancel. Refresh/read the stored state and verify that no replacement was assigned, no replacement notification was created, and the schedule remains unchanged. In the absence-approval flow, verify that cancellation has not approved the request. An AI review/cache entry may exist without an assignment.",
+        "Start a separate assignment attempt for B, then click Assign in the confirmation dialog. Verify the stored replacement and affected schedule identify B, even though the AI recommended A. Check the notification recipient and, when applicable, the absence approval.",
+        "Inspect the AI decision record: the original recommended ID should remain A and the assigned ID should be B with a decision time. Save before/after evidence. Pass only if all workflow criteria are observed; any incorrect change is Failed. Leave unexecuted parts Not assessed."
+      ],
+      "evidence": "Initial state; recommendation A; confirmation dialog for B; unchanged state after Cancel; persisted schedule/replacement/notification after Assign; decision record; date/time, observer, build, and AI mode.",
+      "limit": "Selecting B instead of A is the override. The current screen does not require a separate Reject AI button. A passing direct decision-recording unit test alone does not complete this UI observation."
+    }
+  ]
+}

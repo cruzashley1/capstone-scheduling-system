@@ -463,6 +463,8 @@ class _NotificationsContentState extends State<NotificationsContent>
     return Material(
       color: Colors.white,
       child: TabBar(
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
         controller: _tabController,
         labelColor: const Color(0xFF1034A6),
         unselectedLabelColor: const Color(0xFF64748B),

@@ -37,6 +37,8 @@ venv/
 
 # --- Flutter / Dart ---
 scheduling_system/build/
+# Compiled installer; keep installer.iss as the versioned build recipe.
+scheduling_system/installer/
 # Gradle writes android/build/ too, which the Flutter .gitignore's
 # root-anchored /build/ rule does not catch.
 scheduling_system/**/build/

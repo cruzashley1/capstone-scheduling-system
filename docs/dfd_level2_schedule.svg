@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2660 2480" width="2660" height="2480" role="img" aria-label="Schedule Management Data Flow Diagram Level 2, processes 4.1 to 4.5.">
+  <defs>
+    <marker id="ar" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#0B0B0C"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="2660" height="2480" fill="#FFFFFF"/>
+
+  <g font-family="'Segoe UI','Nunito Sans','Trebuchet MS',system-ui,sans-serif" fill="#0B0B0C">
+
+    <text x="1330" y="120" font-size="60" font-weight="700" text-anchor="middle">Schedule Management DFD Level 2</text>
+
+    <!-- ── Shapes ───────────────────────────────────────── -->
+    <g fill="none" stroke="#0B0B0C" stroke-width="4">
+      <!-- entities -->
+      <rect x="120" y="560"  width="360" height="440"/>
+      <rect x="120" y="1960" width="360" height="180"/>
+      <rect x="120" y="2200" width="360" height="180"/>
+      <!-- processes -->
+      <rect x="900" y="250"  width="520" height="300" rx="40"/>
+      <line x1="900" y1="318" x2="1420" y2="318"/>
+      <rect x="900" y="630"  width="520" height="300" rx="40"/>
+      <line x1="900" y1="698" x2="1420" y2="698"/>
+      <rect x="900" y="1010" width="520" height="340" rx="40"/>
+      <line x1="900" y1="1078" x2="1420" y2="1078"/>
+      <rect x="900" y="1430" width="520" height="320" rx="40"/>
+      <line x1="900" y1="1498" x2="1420" y2="1498"/>
+      <rect x="900" y="1830" width="520" height="320" rx="40"/>
+      <line x1="900" y1="1898" x2="1420" y2="1898"/>
+      <!-- data stores -->
+      <rect x="1800" y="250"  width="640" height="110"/><line x1="1930" y1="250"  x2="1930" y2="360"/>
+      <rect x="1800" y="400"  width="640" height="140"/><line x1="1930" y1="400"  x2="1930" y2="540"/>
+      <rect x="1800" y="580"  width="640" height="140"/><line x1="1930" y1="580"  x2="1930" y2="720"/>
+      <rect x="1800" y="760"  width="640" height="200"/><line x1="1930" y1="760"  x2="1930" y2="960"/>
+      <rect x="1800" y="1010" width="640" height="200"/><line x1="1930" y1="1010" x2="1930" y2="1210"/>
+      <rect x="1800" y="1250" width="640" height="240"/><line x1="1930" y1="1250" x2="1930" y2="1490"/>
+      <rect x="1800" y="1600" width="640" height="110"/><line x1="1930" y1="1600" x2="1930" y2="1710"/>
+    </g>
+
+    <!-- entity labels -->
+    <g font-size="46" text-anchor="middle">
+      <text x="300" y="795">Administrator</text>
+      <text x="300" y="2035">Security</text>
+      <text x="300" y="2090">Personnel</text>
+      <text x="300" y="2275">Head</text>
+      <text x="300" y="2330">Guard</text>
+    </g>
+
+    <!-- process labels -->
+    <g text-anchor="middle">
+      <text x="1160" y="298"  font-size="40">4.1</text>
+      <text x="1160" y="420"  font-size="44">Set Generation</text>
+      <text x="1160" y="475"  font-size="44">Period &amp; Group</text>
+
+      <text x="1160" y="678"  font-size="40">4.2</text>
+      <text x="1160" y="800"  font-size="44">Rotate Station</text>
+      <text x="1160" y="855"  font-size="44">Placement</text>
+
+      <text x="1160" y="1058" font-size="40">4.3</text>
+      <text x="1160" y="1190" font-size="44">Generate Duty</text>
+      <text x="1160" y="1245" font-size="44">Roster</text>
+
+      <text x="1160" y="1478" font-size="40">4.4</text>
+      <text x="1160" y="1600" font-size="44">Review &amp; Edit</text>
+      <text x="1160" y="1655" font-size="44">Draft Schedule</text>
+
+      <text x="1160" y="1878" font-size="40">4.5</text>
+      <text x="1160" y="2000" font-size="44">Publish</text>
+      <text x="1160" y="2055" font-size="44">Schedule</text>
+    </g>
+
+    <!-- data store labels -->
+    <g text-anchor="middle">
+      <text x="1865" y="320"  font-size="44">D2</text> <text x="2185" y="320"  font-size="46">Stations tbl</text>
+      <text x="1865" y="485"  font-size="44">D4</text> <text x="2185" y="485"  font-size="38">Special Assignments tbl</text>
+      <text x="1865" y="665"  font-size="44">D1</text> <text x="2185" y="665"  font-size="46">Employees tbl</text>
+      <text x="1865" y="875"  font-size="44">D6</text> <text x="2185" y="875"  font-size="46">Schedules tbl</text>
+      <text x="1865" y="1125" font-size="44">D5</text> <text x="2185" y="1125" font-size="38">Rotation Assignments tbl</text>
+      <text x="1865" y="1385" font-size="44">D12</text><text x="2185" y="1385" font-size="42">Duty Assignments tbl</text>
+      <text x="1865" y="1670" font-size="44">D11</text><text x="2185" y="1670" font-size="44">Notifications tbl</text>
+    </g>
+
+    <!-- ── Data flows ───────────────────────────────────── -->
+    <g fill="none" stroke="#0B0B0C" stroke-width="4" marker-end="url(#ar)">
+      <!-- administrator ↔ processes -->
+      <polyline points="480,600 620,600 620,320 900,320"/>
+      <polyline points="900,480 700,480 700,650 480,650"/>
+      <polyline points="900,1180 400,1180 400,1000"/>
+      <polyline points="300,1000 300,1500 900,1500"/>
+      <polyline points="900,1680 200,1680 200,1000"/>
+      <polyline points="160,1000 160,1900 900,1900"/>
+      <!-- process → process -->
+      <polyline points="1160,550 1160,630"/>
+      <polyline points="1160,930 1160,1010"/>
+      <polyline points="1160,1350 1160,1430"/>
+      <polyline points="1160,1750 1160,1830"/>
+      <!-- 4.5 → personnel and head guard -->
+      <polyline points="900,1990 480,1990"/>
+      <polyline points="900,2100 620,2100 620,2290 480,2290"/>
+      <!-- 4.1 ← stores -->
+      <polyline points="1800,300 1420,300"/>
+      <polyline points="1800,470 1420,470"/>
+      <polyline points="1800,790 1740,790 1740,530 1420,530"/>
+      <!-- 4.2 ↔ stores -->
+      <polyline points="1800,660 1420,660"/>
+      <polyline points="1420,860 1700,860 1700,1010 1800,1010"/>
+      <polyline points="1800,1150 1470,1150 1470,900 1420,900"/>
+      <!-- 4.3 → stores -->
+      <polyline points="1420,1235 2520,1235 2520,860 2440,860"/>
+      <polyline points="1420,1310 1800,1310"/>
+      <!-- 4.4 ↔ stores -->
+      <polyline points="1800,1400 1580,1400 1580,1480 1420,1480"/>
+      <polyline points="1420,1560 1720,1560 1720,1450 1800,1450"/>
+      <!-- 4.5 → stores -->
+      <polyline points="1420,2100 2580,2100 2580,920 2440,920"/>
+      <polyline points="1420,1950 1600,1950 1600,1660 1800,1660"/>
+    </g>
+
+    <!-- ── Flow labels ──────────────────────────────────── -->
+    <g font-size="32" text-anchor="middle">
+      <!-- administrator -->
+      <text x="700" y="264">Start Date,</text>
+      <text x="700" y="302">Group / Station</text>
+      <text x="680" y="690">Overlap &amp; Pin Warnings</text>
+      <text x="660" y="1162">Draft Schedule &amp; Notes</text>
+      <text x="620" y="1482">Edit Assignment / Add Personnel</text>
+      <text x="580" y="1662">Updated Draft Roster</text>
+      <text x="620" y="1882">Publish Schedule</text>
+      <text x="690" y="1934">Published Schedule</text>
+      <text x="690" y="1972">&amp; Notification</text>
+      <text x="700" y="2044">Published Schedule</text>
+      <text x="700" y="2082">&amp; Duty Roster</text>
+      <!-- process → process -->
+      <text x="1190" y="598" text-anchor="start">Validated Period &amp; Group</text>
+      <text x="1190" y="978" text-anchor="start">Station Placement &amp; Pool</text>
+      <text x="1190" y="1382" text-anchor="start">Draft Roster &amp;</text>
+      <text x="1190" y="1420" text-anchor="start">Schedule Notes</text>
+      <text x="1190" y="1800" text-anchor="start">Reviewed Schedule</text>
+      <!-- 4.1 -->
+      <text x="1610" y="246">Station Setup &amp;</text>
+      <text x="1610" y="284">Required Posts</text>
+      <text x="1610" y="416">Pinned Special</text>
+      <text x="1610" y="454">Assignments</text>
+      <text x="1580" y="512">Existing Schedules</text>
+      <!-- 4.2 -->
+      <text x="1610" y="642">Personnel Pool</text>
+      <text x="1560" y="842">Store Placement</text>
+      <text x="1620" y="1132">Previous Placement</text>
+      <!-- 4.3 -->
+      <text x="1610" y="1212">Save Draft Schedule</text>
+      <text x="1610" y="1292">Store Duty Assignments</text>
+      <!-- 4.4 -->
+      <text x="1660" y="1382">Draft Duty Entries</text>
+      <text x="1580" y="1542">Update Duty Entry</text>
+      <!-- 4.5 -->
+      <text x="1990" y="2082">Set Status = Published</text>
+      <text x="1620" y="1622">Create Notifications</text>
+    </g>
+
+  </g>
+</svg>

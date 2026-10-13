@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2400 1400" width="2400" height="1400" role="img" aria-label="Data Flow Diagram Level 1, sheet 3 of 4: Duty Request Management and Reporting.">
+  <defs>
+    <marker id="ar" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L12 6 L0 12 Z" fill="#0B0B0C"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="2400" height="1400" fill="#FFFFFF"/>
+
+  <g font-family="'Segoe UI','Nunito Sans','Trebuchet MS',system-ui,sans-serif" fill="#0B0B0C">
+
+    <text x="1200" y="102" font-size="62" font-weight="700" text-anchor="middle">Data Flow Diagram Level 1</text>
+
+    <g fill="none" stroke="#0B0B0C" stroke-width="4">
+      <!-- entities -->
+      <rect x="120" y="250" width="360" height="180"/>
+      <rect x="120" y="500" width="360" height="180"/>
+      <rect x="120" y="900" width="360" height="340"/>
+      <!-- processes -->
+      <rect x="950" y="300"  width="470" height="400" rx="40"/>
+      <line x1="950" y1="368"  x2="1420" y2="368"/>
+      <rect x="950" y="1000" width="470" height="300" rx="40"/>
+      <line x1="950" y1="1068" x2="1420" y2="1068"/>
+      <!-- data stores -->
+      <rect x="1700" y="280"  width="580" height="140"/><line x1="1830" y1="280"  x2="1830" y2="420"/>
+      <rect x="1700" y="470"  width="580" height="110"/><line x1="1830" y1="470"  x2="1830" y2="580"/>
+      <rect x="1700" y="630"  width="580" height="110"/><line x1="1830" y1="630"  x2="1830" y2="740"/>
+      <rect x="1700" y="1080" width="580" height="110"/><line x1="1830" y1="1080" x2="1830" y2="1190"/>
+    </g>
+
+    <g font-size="46" text-anchor="middle">
+      <text x="300" y="320">Security</text>
+      <text x="300" y="375">Personnel</text>
+      <text x="300" y="570">Head</text>
+      <text x="300" y="625">Guard</text>
+      <text x="300" y="1085">Administrator</text>
+    </g>
+
+    <g text-anchor="middle">
+      <text x="1185" y="348"  font-size="40">5.0</text>
+      <text x="1185" y="480"  font-size="44">Duty Request</text>
+      <text x="1185" y="535"  font-size="44">Management</text>
+      <text x="1185" y="1048" font-size="40">6.0</text>
+      <text x="1185" y="1200" font-size="44">Reporting</text>
+    </g>
+
+    <g text-anchor="middle">
+      <text x="1765" y="340"  font-size="30">D7 · D13</text><text x="1765" y="382"  font-size="30">D14 · D15</text><text x="2075" y="340"  font-size="40">Duty Request tbls</text><text x="2075" y="386"  font-size="24">absence · special · leave · cover</text>
+      <text x="1765" y="542"  font-size="44">D11</text><text x="2075" y="542"  font-size="42">Notifications tbl</text>
+      <text x="1765" y="702"  font-size="44">D6</text><text x="2075" y="702"  font-size="44">Schedules tbl</text>
+      <text x="1765" y="1152" font-size="44">D10</text><text x="2075" y="1152" font-size="42">Replacements tbl</text>
+    </g>
+
+    <g fill="none" stroke="#0B0B0C" stroke-width="4" marker-end="url(#ar)">
+      <polyline points="950,310 480,310"/>
+      <polyline points="480,390 950,390"/>
+      <polyline points="480,560 950,560"/>
+      <polyline points="950,620 480,620"/>
+      <polyline points="1000,700 1000,760 300,760 300,900"/>
+      <polyline points="400,900 400,820 1080,820 1080,700"/>
+      <polyline points="1420,345 1700,345"/>
+      <polyline points="1850,420 1850,460 1420,460"/>
+      <polyline points="1420,525 1700,525"/>
+      <polyline points="1420,685 1700,685"/>
+      <polyline points="1780,740 1780,860 1500,860 1500,1080 1420,1080"/>
+      <polyline points="1700,1150 1420,1150"/>
+      <polyline points="2280,345 2340,345 2340,1250 1420,1250"/>
+      <polyline points="480,1050 950,1050"/>
+      <polyline points="950,1200 480,1200"/>
+    </g>
+
+    <g font-size="32" text-anchor="middle">
+      <text x="715" y="292">Notification</text>
+      <text x="715" y="372">Duty Request &amp; Cover Offer</text>
+      <text x="715" y="542">Duty Request</text>
+      <text x="715" y="602">Notification</text>
+      <text x="650" y="742">Pending Requests</text>
+      <text x="740" y="802">Approve / Decline</text>
+      <text x="1560" y="327">Store Request</text>
+      <text x="1635" y="442">Pending Requests</text>
+      <text x="1560" y="507">New Notification</text>
+      <text x="1560" y="667">Update Schedule</text>
+      <text x="1640" y="842">Past Schedules</text>
+      <text x="1560" y="1132">Cover Records</text>
+      <text x="1880" y="1232">Leave Records</text>
+      <text x="715" y="1032">Generate Report</text>
+      <text x="715" y="1182">Exported PDF Report</text>
+    </g>
+
+  </g>
+</svg>

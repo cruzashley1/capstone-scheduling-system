@@ -1,0 +1,4 @@
+# Keep browser local storage at the same origin across Stop/Run in the IDE.
+server:
+  host: localhost
+  port: 7357

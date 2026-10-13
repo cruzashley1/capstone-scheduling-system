@@ -315,9 +315,8 @@ class _AutoSchedulerContentState extends State<AutoSchedulerContent> {
                   const SizedBox(height: 24),
 
                   // Main Configuration Panel
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
+                  LayoutBuilder(builder: (context, constraints) {
+                    final panels = <Widget>[
                       // Left: Date Range & Rules
                       Expanded(
                         flex: 2,
@@ -494,7 +493,7 @@ class _AutoSchedulerContentState extends State<AutoSchedulerContent> {
                                   onPressed: () => widget.onNavigate
                                       ?.call(ScreenType.scheduleManagement),
                                   icon: const Icon(Icons.save, size: 18),
-                                  label: const Text('Review & Publish'),
+                                  label: const Text('Review & Submit'),
                                   style: TextButton.styleFrom(
                                     foregroundColor: const Color(0xFF1034A6),
                                   ),
@@ -523,8 +522,15 @@ class _AutoSchedulerContentState extends State<AutoSchedulerContent> {
                           ],
                         ),
                       ),
-                    ],
-                  ),
+                    ];
+                    if (constraints.maxWidth < 1000) {
+                      return Column(children: [
+                        for (final panel in panels.whereType<Expanded>())
+                          Padding(padding: const EdgeInsets.only(bottom: 24), child: panel.child),
+                      ]);
+                    }
+                    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: panels);
+                  }),
                 ],
               ),
             ),
@@ -755,7 +761,7 @@ class _AutoSchedulerContentState extends State<AutoSchedulerContent> {
                 const SizedBox(height: 10),
                 Center(
                   child: Text(
-                    'The schedule is saved as unpublished for review.',
+                    'Saved as a draft. Submit the complete period from Period Approvals.',
                     style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   ),
                 ),
@@ -847,7 +853,7 @@ class _AutoSchedulerContentState extends State<AutoSchedulerContent> {
                             : 'The schedules were still generated and saved. '
                                 'These are the places the roster doesn\'t '
                                 'match the set-up — fix them and generate '
-                                'again, or publish as-is knowing about them.',
+                                'again, or submit for review with these notes.',
                         style: TextStyle(
                           fontSize: 12,
                           height: 1.4,
