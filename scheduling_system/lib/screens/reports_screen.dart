@@ -1229,34 +1229,52 @@ class _ReportsContentState extends State<ReportsContent> {
 
   // ── Top bar ───────────────────────────────────
   Widget _buildTopBar() {
-    Widget field(String label, Widget control) => Row(mainAxisSize: MainAxisSize.min, children: [
+    Widget field(String label, Widget control) => Row(children: [
       Text(label, style: const TextStyle(fontSize: 12, color: _kTextMuted, fontWeight: FontWeight.w600)),
-      const SizedBox(width: 8), control,
+      const SizedBox(width: 8), Expanded(child: control),
     ]);
+    final filters = Row(children: [
+      if (!_onLeaveReport) ...[
+        Expanded(child: field('Station', _buildDropdown<StationInfo>(value: _station, width: 240,
+          items: _stations.map((s) => DropdownMenuItem(value: s, child: Text(s.label, overflow: TextOverflow.ellipsis))).toList(),
+          onChanged: (value) => setState(() { _station = value!; _refreshData(); })))),
+        const SizedBox(width: 16),
+        Expanded(child: field('Period', _buildDropdown<ReportPeriod>(value: _period, width: 210,
+          items: _periods.map((p) => DropdownMenuItem(value: p, child: Text(p.label, overflow: TextOverflow.ellipsis))).toList(),
+          onChanged: (value) => setState(() { _period = value!; _refreshData(); })))),
+      ] else ...[
+        Expanded(child: field('Year', _buildDropdown<int>(value: _leaveYear, width: 120,
+          items: _leaveYears.map((y) => DropdownMenuItem(value: y, child: Text('$y'))).toList(),
+          onChanged: (value) => setState(() => _leaveYear = value!)))),
+        const SizedBox(width: 16),
+        Expanded(child: field('Status', _buildDropdown<String>(value: _leaveStatus, width: 160,
+          items: _kLeaveStatuses.map((status) => DropdownMenuItem(value: status, child: Text(status))).toList(),
+          onChanged: (value) => setState(() => _leaveStatus = value!)))),
+        IconButton(onPressed: _loadLeaves, tooltip: 'Refresh',
+          icon: const Icon(Icons.refresh_rounded, color: _kAccent)),
+      ],
+    ]);
+    final reportSwitch = KeyedSubtree(key: const ValueKey('report-kind-switch'), child: _buildReportSwitch());
+    final export = KeyedSubtree(key: const ValueKey('report-export-action'),
+      child: _onLeaveReport ? _buildLeaveExportButton() : _buildExportSplitButton());
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 14, 24, 14),
       decoration: const BoxDecoration(color: Colors.white, border: Border(bottom: BorderSide(color: _kBorder))),
-      child: Wrap(spacing: 20, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        _buildReportSwitch(),
-        if (!_onLeaveReport) ...[
-          field('Station', _buildDropdown<StationInfo>(value: _station, width: 240,
-            items: _stations.map((s) => DropdownMenuItem(value: s, child: Text(s.label, overflow: TextOverflow.ellipsis))).toList(),
-            onChanged: (value) => setState(() { _station = value!; _refreshData(); }))),
-          field('Period', _buildDropdown<ReportPeriod>(value: _period, width: 210,
-            items: _periods.map((p) => DropdownMenuItem(value: p, child: Text(p.label, overflow: TextOverflow.ellipsis))).toList(),
-            onChanged: (value) => setState(() { _period = value!; _refreshData(); }))),
-          _buildExportSplitButton(),
-        ] else ...[
-          field('Year', _buildDropdown<int>(value: _leaveYear, width: 120,
-            items: _leaveYears.map((y) => DropdownMenuItem(value: y, child: Text('$y'))).toList(),
-            onChanged: (value) => setState(() => _leaveYear = value!))),
-          field('Status', _buildDropdown<String>(value: _leaveStatus, width: 160,
-            items: _kLeaveStatuses.map((status) => DropdownMenuItem(value: status, child: Text(status))).toList(),
-            onChanged: (value) => setState(() => _leaveStatus = value!))),
-          IconButton(onPressed: _loadLeaves, tooltip: 'Refresh', icon: const Icon(Icons.refresh_rounded, color: _kAccent)),
-          _buildLeaveExportButton(),
-        ],
-      ]),
+      child: LayoutBuilder(builder: (context, constraints) {
+        // Keep export at the top right. Only the filters move to a second
+        // row when the desktop window cannot comfortably fit all controls.
+        if (constraints.maxWidth < 1200) {
+          return Column(children: [
+            Row(children: [reportSwitch, const Spacer(), export]),
+            const SizedBox(height: 12),
+            filters,
+          ]);
+        }
+        return Row(children: [
+          reportSwitch, const SizedBox(width: 20),
+          Expanded(child: filters), const SizedBox(width: 20), export,
+        ]);
+      }),
     );
   }
 
@@ -1289,11 +1307,12 @@ class _ReportsContentState extends State<ReportsContent> {
               Icon(icon, size: 15,
                   color: selected ? _kAccent : _kTextMuted),
               const SizedBox(width: 7),
-              Text(label,
+              Flexible(child: Text(label,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: selected ? _kText : _kTextMuted)),
+                      color: selected ? _kText : _kTextMuted))),
             ],
           ),
         ),
@@ -1301,6 +1320,7 @@ class _ReportsContentState extends State<ReportsContent> {
     }
 
     return Container(
+      width: 340,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: const Color(0xFFF1F5F9),
@@ -1310,11 +1330,11 @@ class _ReportsContentState extends State<ReportsContent> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          segment(ReportKind.schedule, Icons.calendar_month_rounded,
-              'Schedule Report'),
+          Expanded(child: segment(ReportKind.schedule, Icons.calendar_month_rounded,
+              'Schedule Report')),
           const SizedBox(width: 3),
-          segment(ReportKind.leave, Icons.beach_access_rounded,
-              'Leave Report'),
+          Expanded(child: segment(ReportKind.leave, Icons.beach_access_rounded,
+              'Leave Report')),
         ],
       ),
     );
@@ -1850,11 +1870,8 @@ class _ReportsContentState extends State<ReportsContent> {
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?> onChanged,
   }) {
-    // `width` is the preferred width, not a hard one: on a narrow window the
-    // dropdown shrinks (down to 110px) so the top bar can't overflow.
-    return Flexible(
-      child: Container(
-      constraints: BoxConstraints(minWidth: 110, maxWidth: width),
+    return Container(
+      constraints: BoxConstraints(maxWidth: width),
       height: 38,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
@@ -1871,7 +1888,6 @@ class _ReportsContentState extends State<ReportsContent> {
               fontWeight: FontWeight.w600, color: _kText),
           items: items, onChanged: onChanged,
         ),
-      ),
       ),
     );
   }

@@ -258,6 +258,34 @@ class ApprovalFlowTests(unittest.TestCase):
         self.assertEqual(record["status"], "pending_assistant")
         self.assertTrue(all(s["status"] == "unpublished" for s in self.repo.schedules.list()))
 
+    def test_official_updates_only_own_name_and_preserves_decision_history(self):
+        record = self.approve()
+        original = copy.deepcopy(self.repo.schedule_approvals.get(record["id"]))
+        result = self.request("PUT", "/account", user="assistant", json={"name": "  Updated Assistant  "})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()["name"], "Updated Assistant")
+        self.assertEqual(self.request("GET", "/account", user="assistant").json()["name"], "Updated Assistant")
+        self.assertEqual(self.repo.users.get("commander")["name"], "Commander")
+        self.assertEqual(self.repo.schedule_approvals.get(record["id"]), original)
+        # The existing session uses the updated name on a future decision.
+        revised = self.request("POST", f"/schedule-approvals/{record['id']}/revise", json={"version": record["version"], "comment": "Next revision"})
+        self.assertEqual(revised.status_code, 200)
+        result = self.decide(self.submit(), "assistant")
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json()["approval"]["events"][-1]["name"], "Updated Assistant")
+
+    def test_profile_cannot_change_role_username_or_other_accounts(self):
+        for payload in ({"name": " "}, {"name": "A" * 121},
+                        {"name": "Changed", "role": "admin"},
+                        {"name": "Changed", "username": "commander"},
+                        {"name": "Changed", "active": False}):
+            result = self.request("PUT", "/account", user="assistant", json=payload)
+            self.assertIn(result.status_code, (400, 422))
+        for user in ("guard", "admin"):
+            self.assertEqual(self.request("PUT", "/account", user=user, json={"name": "Changed"}).status_code, 403)
+        self.assertEqual(self.client.put("/account", json={"name": "Changed"}).status_code, 401)
+        self.assertEqual(self.repo.users.get("assistant")["name"], "Assistant")
+
     def test_empty_or_undefined_rosters_cannot_be_submitted(self):
         schedule = self.repo.schedules.get("STA1")
         schedule["days"][0]["entries"][0]["post"] = "Undefined"

@@ -48,10 +48,14 @@ first, then Area Commander. The final decision automatically publishes every
 station and unlocks schedule PDF export. Either official can return the
 submission with revision comments.
 
-The admin creates their accounts in **Official Accounts**. Submitted rosters,
+The admin creates their accounts in **Settings > Company Info > Official Accounts**. Submitted rosters,
 decisions and emergency amendments are preserved in history. Emergency
 replacements take effect immediately and notify both officials; routine
 revisions require both approvals again.
+
+Official **Profile** includes account details and name editing, personal decision
+history with filters, and a separate Security section for password changes.
+Previous approval records keep the name captured when the decision was made.
 
 Deployment requires migration **005** and updated clients. See
 [Schedule approval setup and usage](backend_python/SCHEDULE_APPROVALS.md).

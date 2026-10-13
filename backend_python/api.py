@@ -595,6 +595,7 @@ def get_employee_schedule(employee_id: str):
                         "stationId": schedule.get("stationId"),
                         "stationName": schedule.get("stationName"),
                         "shift": entry.get("shift"),
+                        "post": entry.get("post"),
                         # This guard's own duty window off the station's
                         # stagger ladder. The app prefers it over the
                         # shift's base hours, so a guard on the third

@@ -58,11 +58,12 @@ void main() {
         await tap('Dashboard');
         await tap('Schedule Management');
         await tap('Period Approvals');
-        await tap('Official Accounts');
         await tap('Generate Schedule');
         await tap('Notifications');
+        await tap('Approval Alerts');
         await tap('Reports');
         await tap('Settings');
+        await tap('Company Info');
         await tap('Dashboard');
       }
 

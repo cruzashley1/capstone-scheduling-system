@@ -8,6 +8,7 @@ import '../../models/guard_shift.dart';
 import '../../models/leave_request.dart';
 import '../../services/duty_clock.dart';
 import '../../services/server_clock.dart';
+import '../../utils/guard_role_label.dart';
 import '../../widgets/absence_request_card.dart';
 import '../../widgets/cover_availability_card.dart';
 import '../../widgets/leave_request_card.dart';
@@ -124,6 +125,10 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
       leaves: widget.leaves,
       at: _now,
     );
+    final roleLabel = guardRoleLabel(
+      employeeType: employee.type,
+      duty: duty,
+    );
 
     // Bi-week stats over the current period (rest days = period days
     // with no duty entry; covers = reliever/substitute duties).
@@ -238,7 +243,7 @@ class _SecurityDashboardScreenState extends State<SecurityDashboardScreen> {
                           const SizedBox(width: 8),
                           Flexible(
                             child: Text(
-                              '${employeeTypeToRoleString(employee.type)} · $_stationLabel',
+                              '$roleLabel · $_stationLabel',
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: Colors.white,

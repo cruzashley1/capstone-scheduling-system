@@ -9,6 +9,7 @@ import '../../models/leave_request.dart';
 import '../../models/station_roster.dart';
 import '../../services/duty_clock.dart';
 import '../../services/server_clock.dart';
+import '../../utils/guard_role_label.dart';
 import '../../widgets/absence_request_card.dart';
 import '../../widgets/cover_availability_card.dart';
 import '../../widgets/leave_request_card.dart';
@@ -127,6 +128,10 @@ class _HeadGuardDashboardScreenState extends State<HeadGuardDashboardScreen> {
       leaves: widget.leaves,
       at: _now,
     );
+    final roleLabel = guardRoleLabel(
+      employeeType: employee.type,
+      duty: duty,
+    );
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -223,7 +228,7 @@ class _HeadGuardDashboardScreenState extends State<HeadGuardDashboardScreen> {
                           const SizedBox(width: 8),
                           Flexible(
                             child: Text(
-                              '${employeeTypeToRoleString(employee.type)} · $_stationLabel',
+                              '$roleLabel · $_stationLabel',
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: Colors.white,

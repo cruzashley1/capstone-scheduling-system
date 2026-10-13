@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/schedule.dart';
 import '../models/schedule_approval.dart';
+import '../models/approval_readiness.dart';
+import '../models/station.dart';
 import '../services/api_service.dart';
 import '../services/profile_settings.dart';
 import 'schedule_detail_screen.dart';
@@ -12,7 +14,15 @@ const _blue = Color(0xFF1034A6);
 class ApprovalScreen extends StatefulWidget {
   final String role;
   final String? initialPeriod;
-  const ApprovalScreen({super.key, required this.role, this.initialPeriod});
+  final VoidCallback? onBack;
+  final VoidCallback? onGenerateSchedules;
+  const ApprovalScreen({
+    super.key,
+    required this.role,
+    this.initialPeriod,
+    this.onBack,
+    this.onGenerateSchedules,
+  });
   @override
   State<ApprovalScreen> createState() => _ApprovalScreenState();
 }
@@ -20,9 +30,13 @@ class ApprovalScreen extends StatefulWidget {
 class _ApprovalScreenState extends State<ApprovalScreen> {
   List<ScheduleApproval> _records = [];
   List<Schedule> _schedules = [];
+  List<Station> _stations = [];
   bool _loading = true;
   bool _busy = false;
+  bool _fetching = false;
+  bool _opening = false;
   String? _error;
+  String? _submissionError;
   String? _period;
   String _filter = 'All';
   Timer? _timer;
@@ -45,13 +59,17 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
   }
 
   Future<void> _load() async {
+    if (_fetching) return;
+    setState(() => _fetching = true);
     final results = await Future.wait([
       ApiService.workflow('/schedule-approvals'),
       if (_admin) ApiService.fetchSchedules(),
+      if (_admin) ApiService.fetchStations(),
     ]);
     if (!mounted) return;
     setState(() {
       _loading = false;
+      _fetching = false;
       _error = results[0]['success'] == true
           ? null
           : results[0]['error'].toString();
@@ -67,8 +85,16 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       } else if (_admin) {
         _error = results[1]['error'].toString();
       }
+      if (_admin && results[2]['success'] == true) {
+        _stations = (results[2]['stations'] as List).cast<Station>();
+      } else if (_admin) {
+        _error = results[2]['error'].toString();
+      }
     });
   }
+
+  ApprovalReadiness get _readiness =>
+      ApprovalReadiness.check(_stations, _periods[_period] ?? []);
 
   Map<String, List<Schedule>> get _periods {
     final periods = <String, List<Schedule>>{};
@@ -81,7 +107,17 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
   }
 
   Future<void> _submit() async {
-    if (_period == null || _busy) return;
+    if (_period == null ||
+        _busy ||
+        _fetching ||
+        _error != null ||
+        !_readiness.canSubmit) {
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _submissionError = null;
+    });
     final dates = _period!.split('|');
     final confirmed = await showDialog<bool>(
       context: context,
@@ -102,8 +138,11 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
-    setState(() => _busy = true);
+    if (!mounted) return;
+    if (confirmed != true) {
+      setState(() => _busy = false);
+      return;
+    }
     final result = await ApiService.workflow(
       '/schedule-approvals/submit',
       method: 'POST',
@@ -114,12 +153,15 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
       },
     );
     if (!mounted) return;
-    setState(() => _busy = false);
-    _message(
-      result['success'] == true
-          ? 'Period submitted to Assistant Security.'
-          : result['error'].toString(),
-    );
+    setState(() {
+      _busy = false;
+      _submissionError = result['success'] == true
+          ? null
+          : result['error'].toString();
+    });
+    if (result['success'] == true) {
+      _message('Period submitted to Assistant Security.');
+    }
     await _load();
   }
 
@@ -128,11 +170,18 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
   ).showSnackBar(SnackBar(content: Text(message)));
 
   Future<void> _open(ScheduleApproval record) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ApprovalReviewScreen(id: record.id, role: widget.role),
-      ),
-    );
+    if (_opening) return;
+    setState(() => _opening = true);
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              ApprovalReviewScreen(id: record.id, role: widget.role),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
     if (mounted) _load();
   }
 
@@ -161,6 +210,14 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
         children: [
           Row(
             children: [
+              if (widget.onBack != null) ...[
+                IconButton(
+                  tooltip: 'Back to schedules',
+                  onPressed: widget.onBack,
+                  icon: const Icon(Icons.arrow_back),
+                ),
+                const SizedBox(width: 8),
+              ],
               const Expanded(
                 child: Text(
                   'Period Approvals',
@@ -169,7 +226,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
               ),
               IconButton(
                 tooltip: 'Refresh',
-                onPressed: _busy ? null : _load,
+                onPressed: _busy || _fetching ? null : _load,
                 icon: const Icon(Icons.refresh),
               ),
             ],
@@ -180,6 +237,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
             style: TextStyle(color: Colors.blueGrey),
           ),
           const SizedBox(height: 24),
+          if (_fetching) const LinearProgressIndicator(minHeight: 2),
           Wrap(
             spacing: 12,
             runSpacing: 12,
@@ -245,6 +303,7 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
                         SizedBox(
                           width: 340,
                           child: DropdownButtonFormField<String>(
+                            isExpanded: true,
                             initialValue: _period,
                             key: ValueKey(_period),
                             decoration: const InputDecoration(
@@ -260,21 +319,28 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
                                         child: Text(
                                           '${key.replaceAll('|', ' – ')} (${_periods[key]!.length} stations)',
                                           style: const TextStyle(fontSize: 13),
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
                                     )
                                     .toList(),
                             onChanged: _busy
                                 ? null
-                                : (value) => setState(() => _period = value),
+                                : (value) => setState(() {
+                                    _period = value;
+                                    _submissionError = null;
+                                  }),
                           ),
                         ),
                         FilledButton.icon(
+                          key: const ValueKey('submit-period'),
                           onPressed:
                               _busy ||
+                                  _fetching ||
                                   _loading ||
                                   _error != null ||
                                   _period == null ||
+                                  !_readiness.canSubmit ||
                                   locked
                               ? null
                               : _submit,
@@ -285,6 +351,26 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 12),
+                    if (!_loading && _error == null && !locked)
+                      _buildReadiness(),
+                    if (_submissionError != null)
+                      Container(
+                        margin: const EdgeInsets.only(top: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.error_outline, color: Colors.red),
+                            const SizedBox(width: 12),
+                            Expanded(child: Text(_submissionError!)),
+                          ],
+                        ),
+                      ),
                     const SizedBox(height: 12),
                     Text(
                       locked
@@ -338,16 +424,120 @@ class _ApprovalScreenState extends State<ApprovalScreen> {
                   ),
                 ),
                 trailing: OutlinedButton(
-                  onPressed: () => _open(r),
+                  onPressed: _opening ? null : () => _open(r),
                   child: Text(
                     r.canDecide(widget.role)
                         ? 'Review & Decide'
                         : 'View Details',
                   ),
                 ),
-                onTap: () => _open(r),
+                onTap: _opening ? null : () => _open(r),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadiness() {
+    final check = _readiness;
+    final ready = check.canSubmit;
+    final color = ready ? const Color(0xFF15803D) : const Color(0xFFB45309);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: ready ? const Color(0xFFF0FDF4) : const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: ready ? const Color(0xFFBBF7D0) : const Color(0xFFFDE68A),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                ready ? Icons.check_circle_outline : Icons.pending_actions,
+                color: color,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '${check.ready} of ${check.total} stations ready',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          LinearProgressIndicator(
+            value: check.total == 0 ? 0 : check.ready / check.total,
+            color: color,
+            backgroundColor: Colors.white,
+            minHeight: 7,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            ready
+                ? 'Every active station has a complete schedule for this period. You can submit it for review.'
+                : check.total == 0
+                ? 'Add active stations before submitting schedules.'
+                : 'Approval covers all ${check.total} active stations together. Complete the items below for the same dates to enable submission.',
+          ),
+          if (check.missing.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Missing schedules (${check.missing.length})',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final name in check.missing)
+                  Chip(
+                    label: Text(name),
+                    backgroundColor: Colors.white,
+                    side: const BorderSide(color: Color(0xFFFDE68A)),
+                  ),
+              ],
+            ),
+          ],
+          if (check.incomplete.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text(
+              'Schedules to correct',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            for (final issue in check.incomplete.entries)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('${issue.key}: ${issue.value}'),
+              ),
+          ],
+          if (check.extra.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Remove schedules for inactive or removed stations: ${check.extra.join(', ')}.',
+            ),
+          ],
+          if (check.missing.isNotEmpty &&
+              widget.onGenerateSchedules != null) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: widget.onGenerateSchedules,
+              icon: const Icon(Icons.event_repeat_outlined),
+              label: const Text('Generate missing schedules'),
+            ),
+          ],
         ],
       ),
     );

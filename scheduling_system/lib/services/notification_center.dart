@@ -3,7 +3,7 @@
 // In-app alert hub shared by every role. Polls the backend for the
 // signed-in user's notifications (guards/head guards read
 // `employee_notifications`; the admin reads attendance reports,
-// emergency absence requests and leave requests), keeps a live unread
+// emergency absence requests, leave requests and approval alerts), keeps a live unread
 // count that drives
 // the nav badges, and raises a popup callback when something new
 // arrives while the app is open — so a notification is announced
@@ -16,6 +16,7 @@ import '../models/absence_request.dart';
 import '../models/attendance_report.dart';
 import '../models/employee_notification.dart';
 import '../models/leave_request.dart';
+import '../models/schedule_approval.dart';
 import 'api_service.dart';
 import 'notification_settings.dart';
 
@@ -44,6 +45,7 @@ class NotificationCenter {
   int _lastUnreadReports = 0;
   int _lastPendingRequests = 0;
   int _lastPendingLeaves = 0;
+  int _lastUnreadApprovals = 0;
 
   /// Starts polling a guard / head guard / reliever inbox.
   void startForEmployee(String employeeId) {
@@ -66,6 +68,7 @@ class NotificationCenter {
       _lastUnreadReports = 0;
       _lastPendingRequests = 0;
       _lastPendingLeaves = 0;
+      _lastUnreadApprovals = 0;
       unreadCount.value = 0;
     }
     _employeeId = employeeId;
@@ -86,6 +89,7 @@ class NotificationCenter {
     _lastUnreadReports = 0;
     _lastPendingRequests = 0;
     _lastPendingLeaves = 0;
+    _lastUnreadApprovals = 0;
     unreadCount.value = 0;
     onPopup = null;
   }
@@ -125,22 +129,21 @@ class NotificationCenter {
     );
   }
 
-  // Admin now sees three things behind the one Notifications item:
-  // attendance reports, emergency absence requests AND leave requests.
-  // Fetch them in parallel so a single poll covers every inbox — a leave
-  // filed from the guard app has to announce itself here, otherwise the
-  // only sign of it is a tab the admin has to think to open.
+  // Attendance reports, absence requests, leave requests and approval alerts
+  // contribute to the admin's Notifications badge and in-app announcements.
   Future<void> _refreshAdmin() async {
     final results = await Future.wait([
       ApiService.fetchAttendanceReports(),
       ApiService.fetchAbsenceRequests(),
       ApiService.fetchLeaveRequests(),
+      ApiService.workflow('/workflow-notifications'),
     ]);
     if (!_adminMode) return;
 
     final reportsResult = results[0];
     final absenceResult = results[1];
     final leaveResult = results[2];
+    final approvalResult = results[3];
 
     // Degrade gracefully: a failed fetch must not wipe the others'
     // count, so we only fold in whichever fetch succeeded and skip the
@@ -148,7 +151,11 @@ class NotificationCenter {
     final reportsOk = reportsResult['success'] == true;
     final absenceOk = absenceResult['success'] == true;
     final leaveOk = leaveResult['success'] == true;
-    if (!reportsOk && !absenceOk && !leaveOk) return;
+    final approvalOk = approvalResult['success'] == true;
+    if (!reportsOk && !absenceOk && !leaveOk && !approvalOk) return;
+    final approvals = approvalOk
+        ? approvalMaps(approvalResult['notifications'])
+        : const <Map<String, dynamic>>[];
 
     final reports = reportsOk
         ? (reportsResult['reports'] as List).cast<AttendanceReport>()
@@ -160,8 +167,8 @@ class NotificationCenter {
         ? (leaveResult['requests'] as List).cast<LeaveRequest>()
         : const <LeaveRequest>[];
 
-    // Unread badge = unread reports + pending absence requests + pending
-    // leave requests, since all three live behind the same sidebar
+    // Unread reports and approvals join pending absence and leave requests
+    // in the badge, since they all live behind the same sidebar
     // Notifications item. A part that failed this poll keeps its previous
     // contribution instead of collapsing to zero, so a one-endpoint blip
     // never lowers the badge.
@@ -176,11 +183,16 @@ class NotificationCenter {
     _lastUnreadReports = unreadReports;
     _lastPendingRequests = pendingRequests;
     _lastPendingLeaves = pendingLeaves;
-    unreadCount.value = unreadReports + pendingRequests + pendingLeaves;
+    if (approvalOk) {
+      _lastUnreadApprovals = approvals.where((n) => n['isRead'] != true).length;
+    }
+    unreadCount.value = unreadReports + pendingRequests + pendingLeaves + _lastUnreadApprovals;
 
     // Combine every id set so the seen-state logic keeps working and
-    // nothing is announced twice across the three inboxes.
+    // nothing is announced twice across the inboxes.
     final newItems = <({String title, String message})>[
+      ...approvals.where((n) => n['isRead'] != true && !_knownIds.contains('approval:${n['id']}'))
+          .map((n) => (title: n['title'].toString(), message: n['message'].toString())),
       ...reports.where((r) => !_knownIds.contains(r.id)).map((r) => (
             title: 'Attendance Report Submitted',
             message: '${r.headGuardName} submitted the '
@@ -205,13 +217,14 @@ class NotificationCenter {
     ];
 
     final allIds = <String>[
+      ...approvals.map((n) => 'approval:${n['id']}'),
       ...reports.map((r) => r.id),
       ...requests.map((a) => a.id),
       ...leaves.map((l) => l.id),
     ];
     // A part that failed this poll returned no ids; keep the previously
     // seen ones so it isn't re-announced as "new" when it recovers.
-    if (!reportsOk || !absenceOk || !leaveOk) {
+    if (!reportsOk || !absenceOk || !leaveOk || !approvalOk) {
       allIds.addAll(_knownIds);
     }
 

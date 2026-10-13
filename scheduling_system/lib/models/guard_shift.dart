@@ -57,6 +57,10 @@ class GuardShift {
   // 'Morning' | 'Afternoon' | 'Night' | 'HG Day' | 'HG Night'
   final String shift;
 
+  // Assigned duty role, such as Roving or SE Platform. Older schedules
+  // may not have a named post.
+  final String? post;
+
   // This duty's own window, "HH:MM", as the station's stagger ladder set
   // it for the post being manned. Null on schedules generated before
   // posts carried times — `window` then falls back to the shift's base
@@ -86,6 +90,7 @@ class GuardShift {
     required this.stationId,
     required this.stationName,
     required this.shift,
+    this.post,
     this.timeInRaw,
     this.timeOutRaw,
     this.originalTimeInRaw,
@@ -211,6 +216,7 @@ class GuardShift {
       stationId: json['stationId'] ?? '',
       stationName: (json['stationName'] ?? '').toString().trim(),
       shift: json['shift'] ?? '',
+      post: (json['post'] as String?)?.trim(),
       timeInRaw: json['timeIn'],
       timeOutRaw: json['timeOut'],
       originalTimeInRaw: json['originalTimeIn'],

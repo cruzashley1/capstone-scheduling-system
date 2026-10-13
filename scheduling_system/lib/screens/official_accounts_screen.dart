@@ -5,7 +5,8 @@ import '../services/api_service.dart';
 import '../widgets/controller_dialog.dart';
 
 class OfficialAccountsScreen extends StatefulWidget {
-  const OfficialAccountsScreen({super.key});
+  final bool embedded;
+  const OfficialAccountsScreen({super.key, this.embedded = false});
   @override
   State<OfficialAccountsScreen> createState() => _OfficialAccountsScreenState();
 }
@@ -127,6 +128,13 @@ class _OfficialAccountsScreenState extends State<OfficialAccountsScreen> {
                         .toList(),
                     onChanged: saving ? null : (v) => role = v!,
                   ),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 16),
+                    child: Text(
+                      'A password will be generated after you create the account. Copy it from the credentials window and share it with the official.',
+                      style: TextStyle(fontSize: 13, color: Colors.blueGrey),
+                    ),
+                  ),
                   if (error != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
@@ -230,14 +238,19 @@ class _OfficialAccountsScreenState extends State<OfficialAccountsScreen> {
 
   @override
   Widget build(BuildContext context) => ListView(
-    padding: const EdgeInsets.all(28),
+    shrinkWrap: widget.embedded,
+    physics: widget.embedded ? const NeverScrollableScrollPhysics() : null,
+    padding: widget.embedded ? EdgeInsets.zero : const EdgeInsets.all(28),
     children: [
       Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Text(
               'Official Accounts',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: widget.embedded ? 20 : 26,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           FilledButton.icon(
@@ -261,38 +274,52 @@ class _OfficialAccountsScreenState extends State<OfficialAccountsScreen> {
         Card(
           child: Padding(
             padding: const EdgeInsets.all(20),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.verified_user_outlined,
-                  size: 32,
-                  color: Color(0xFF1034A6),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        u['name'] ?? u['username'],
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 17,
-                        ),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.verified_user_outlined,
+                      size: 32,
+                      color: Color(0xFF1034A6),
+                    ),
+                    const SizedBox(width: 20),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            u['name'] ?? u['username'],
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 17,
+                            ),
+                          ),
+                          Text(
+                            '${officialRoleLabel(u['role'])} · ${u['username']} · ${u['active'] == false ? 'Inactive' : 'Active'}',
+                          ),
+                        ],
                       ),
-                      Text(
-                        '${officialRoleLabel(u['role'])} · ${u['username']} · ${u['active'] == false ? 'Inactive' : 'Active'}',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    TextButton(
+                      onPressed: _busy ? null : () => _change(u, true),
+                      child: const Text('Reset Password'),
+                    ),
+                    OutlinedButton(
+                      onPressed: _busy ? null : () => _change(u, false),
+                      child: Text(
+                        u['active'] == false ? 'Activate' : 'Deactivate',
                       ),
-                    ],
-                  ),
-                ),
-                TextButton(
-                  onPressed: _busy ? null : () => _change(u, true),
-                  child: const Text('Reset Password'),
-                ),
-                OutlinedButton(
-                  onPressed: _busy ? null : () => _change(u, false),
-                  child: Text(u['active'] == false ? 'Activate' : 'Deactivate'),
+                    ),
+                  ],
                 ),
               ],
             ),

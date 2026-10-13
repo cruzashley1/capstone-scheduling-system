@@ -15,6 +15,8 @@ import '../models/special_request.dart';
 import '../services/api_service.dart';
 import '../services/notification_center.dart';
 import '../services/notification_settings.dart';
+import '../models/schedule_approval.dart';
+import '../widgets/workflow_inbox.dart';
 import 'absence_requests_tab.dart';
 import 'leave_requests_tab.dart';
 import 'special_requests_tab.dart';
@@ -41,10 +43,10 @@ class _NotificationsContentState extends State<NotificationsContent>
 
   String _filter = 'All'; // All | Unread | With Absences
 
-  // Four inboxes now live behind this one screen: the head-guard
+  // Five inboxes live behind this screen: the head-guard
   // attendance reports (tab 0, untouched), employee-filed emergency
   // absence requests (tab 1), special day-off requests (tab 2) and leave
-  // requests (tab 3). The tab bar and page chrome live here; each tab
+  // requests (tab 3), and schedule approval alerts (tab 4). Each tab
   // renders its own scrollable body.
   late final TabController _tabController;
   final GlobalKey<AbsenceRequestsTabState> _absenceTabKey =
@@ -53,6 +55,8 @@ class _NotificationsContentState extends State<NotificationsContent>
       GlobalKey<SpecialRequestsTabState>();
   final GlobalKey<LeaveRequestsTabState> _leaveTabKey =
       GlobalKey<LeaveRequestsTabState>();
+  final _approvalTabKey = GlobalKey<WorkflowInboxState>();
+  int _unreadApprovalCount = 0;
   // Pending absence count, pushed up by the absence tab after each load
   // so the tab label and header badge reflect it without this screen
   // owning that list. Seeded by _loadPendingCounts() below — see there
@@ -69,13 +73,14 @@ class _NotificationsContentState extends State<NotificationsContent>
   bool get _onAbsences => _tabController.index == 1;
   bool get _onSpecials => _tabController.index == 2;
   bool get _onLeaves => _tabController.index == 3;
+  bool get _onApprovals => _tabController.index == 4;
 
   @override
   void initState() {
     super.initState();
     // Rebuild the header chrome once the active tab settles so it matches
     // whichever inbox is on screen.
-    _tabController = TabController(length: 4, vsync: this)
+    _tabController = TabController(length: 5, vsync: this)
       ..addListener(() {
         if (!_tabController.indexIsChanging && mounted) setState(() {});
       });
@@ -124,16 +129,22 @@ class _NotificationsContentState extends State<NotificationsContent>
       ApiService.fetchAbsenceRequests(),
       ApiService.fetchSpecialRequests(),
       ApiService.fetchLeaveRequests(),
+      ApiService.workflow('/workflow-notifications'),
     ]);
     if (!mounted) return;
 
     final absence = results[0];
     final special = results[1];
     final leave = results[2];
+    final approvals = results[3];
 
     // A fetch that failed leaves that badge alone rather than zeroing it —
     // the same reasoning as NotificationCenter's per-inbox fallback.
     setState(() {
+      if (approvals['success'] == true) {
+        _unreadApprovalCount = approvalMaps(approvals['notifications'])
+            .where((n) => n['isRead'] != true).length;
+      }
       if (absence['success'] == true) {
         _pendingAbsenceCount = (absence['requests'] as List)
             .cast<AbsenceRequest>()
@@ -292,6 +303,8 @@ class _NotificationsContentState extends State<NotificationsContent>
                             _buildPendingBadge(_pendingSpecialCount),
                           if (_onLeaves && _pendingLeaveCount > 0 && allowed)
                             _buildPendingBadge(_pendingLeaveCount),
+                          if (_onApprovals && _unreadApprovalCount > 0 && allowed)
+                            _buildPendingBadge(_unreadApprovalCount),
                         ],
                       ),
                       Text(
@@ -301,7 +314,9 @@ class _NotificationsContentState extends State<NotificationsContent>
                                 ? 'Emergency absence requests from employees'
                                 : _onSpecials
                                     ? 'Special day-off requests from employees'
-                                    : 'Leave requests from employees, and leave recorded by the admin',
+                                    : _onLeaves
+                                        ? 'Leave requests from employees, and leave recorded by the admin'
+                                        : 'Schedule decisions, revision requests, and emergency amendments',
                         style: const TextStyle(
                           color: Colors.grey,
                           fontSize: 14,
@@ -375,8 +390,10 @@ class _NotificationsContentState extends State<NotificationsContent>
                               _absenceTabKey.currentState?.reload();
                             } else if (_onSpecials) {
                               _specialTabKey.currentState?.reload();
-                            } else {
+                            } else if (_onLeaves) {
                               _leaveTabKey.currentState?.reload();
+                            } else {
+                              _approvalTabKey.currentState?.reload();
                             }
                           },
                           tooltip: 'Refresh',
@@ -448,6 +465,13 @@ class _NotificationsContentState extends State<NotificationsContent>
                           setState(() => _pendingLeaveCount = count);
                         },
                       ),
+                      WorkflowInbox(
+                        key: _approvalTabKey,
+                        role: 'admin',
+                        onUnreadCountChanged: (count) {
+                          if (mounted) setState(() => _unreadApprovalCount = count);
+                        },
+                      ),
                     ],
                   ),
           ),
@@ -505,6 +529,10 @@ class _NotificationsContentState extends State<NotificationsContent>
               ],
             ),
           ),
+          Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Text('Approval Alerts'),
+            if (_unreadApprovalCount > 0) _buildTabCountBadge(_unreadApprovalCount),
+          ])),
         ],
       ),
     );

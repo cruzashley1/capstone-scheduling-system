@@ -18,7 +18,6 @@ import 'submitted_reports_screen.dart';
 import 'reports_screen.dart';
 import 'settings_screen.dart';
 import 'approval_screen.dart';
-import 'official_accounts_screen.dart';
 import 'find_replacement_screen.dart';
 import '../models/attendance_report.dart';
 import '../models/replacement.dart';
@@ -26,7 +25,6 @@ import '../services/notification_center.dart';
 
 enum ScreenType {
   approvals,
-  officialAccounts,
   dashboard,
   employeeList,
   employeeDetail,
@@ -169,9 +167,7 @@ class _MainLayoutState extends State<MainLayout> {
   int _getSelectedIndex() {
     switch (_currentScreen) {
       case ScreenType.approvals:
-        return 8;
-      case ScreenType.officialAccounts:
-        return 9;
+        return 3;
       case ScreenType.dashboard:
         return 0;
       case ScreenType.availableManagement:
@@ -206,12 +202,6 @@ class _MainLayoutState extends State<MainLayout> {
 
   void _handleSidebarNavigation(int index) {
     switch (index) {
-      case 8:
-        _navigateTo(ScreenType.approvals);
-        break;
-      case 9:
-        _navigateTo(ScreenType.officialAccounts);
-        break;
       case 0:
         _navigateTo(ScreenType.dashboard);
         break;
@@ -242,9 +232,12 @@ class _MainLayoutState extends State<MainLayout> {
   Widget _buildCurrentScreen() {
     switch (_currentScreen) {
       case ScreenType.approvals:
-        return ApprovalScreen(role: 'admin', initialPeriod: _screenData as String?);
-      case ScreenType.officialAccounts:
-        return const OfficialAccountsScreen();
+        return ApprovalScreen(
+          role: 'admin',
+          initialPeriod: _screenData as String?,
+          onBack: () => _navigateTo(ScreenType.scheduleManagement),
+          onGenerateSchedules: () => _navigateTo(ScreenType.autoScheduler),
+        );
       case ScreenType.dashboard:
         return DashboardContent(onNavigate: _navigateTo);
 

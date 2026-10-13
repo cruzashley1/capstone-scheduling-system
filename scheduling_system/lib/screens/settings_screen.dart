@@ -1,6 +1,7 @@
 // screens/settings_screen.dart
 import 'package:flutter/material.dart';
 import 'main_layout.dart';
+import 'official_accounts_screen.dart';
 import '../services/api_service.dart';
 import '../services/notification_settings.dart';
 import '../services/profile_settings.dart';
@@ -1288,6 +1289,10 @@ class _SettingsContentState extends State<SettingsContent> {
               ),
             ],
           ),
+          const SizedBox(height: 28),
+          const Divider(color: _kBorder),
+          const SizedBox(height: 20),
+          const OfficialAccountsScreen(embedded: true),
         ],
       ),
     );

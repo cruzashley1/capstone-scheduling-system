@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 import schedule_approvals as approvals
@@ -24,6 +24,11 @@ class OfficialCreate(BaseModel):
 class OfficialUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=120)
     active: Optional[bool] = None
+
+
+class OfficialProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=120)
 
 
 class PeriodRequest(BaseModel):
@@ -76,6 +81,17 @@ def install(app, namespace):
     def current_account():
         who = sessions.actor()
         return {"success": True, "username": who["username"], "name": who["name"], "role": who["role"]}
+
+    @app.put("/account")
+    def update_own_profile(request: OfficialProfileUpdate):
+        who = sessions.actor(*sessions.OFFICIAL_ROLES)
+        name = request.name.strip()
+        if not name:
+            raise HTTPException(400, "Enter your full name.")
+        # Only the authenticated official's name changes. Historical decision
+        # events retain the name captured when that decision was made.
+        repo.users.update(who["username"], {"name": name})
+        return {"success": True, "username": who["username"], "name": name, "role": who["role"]}
 
     @app.post("/logout")
     def logout():
